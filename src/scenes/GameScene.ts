@@ -3,12 +3,17 @@ import Bean from '../objects/Bean';
 
 export default class GameScene extends Phaser.Scene {
   private beans: Bean[] = [];
+  private beanGroup!: Phaser.Physics.Arcade.Group;
 
   constructor() {
     super('GameScene');
   }
 
   create() {
+    // Create physics group for beans
+    this.beanGroup = this.physics.add.group();
+    this.physics.add.collider(this.beanGroup, this.beanGroup);
+
     // Launch UI Scene
     this.scene.launch('UIScene');
 
@@ -49,6 +54,7 @@ export default class GameScene extends Phaser.Scene {
     const bean = new Bean(this, spawnX, spawnY);
     this.add.existing(bean);
     this.beans.push(bean);
+    this.beanGroup.add(bean);
 
     // Notify UI of new count via registry
     this.registry.set('beanCount', this.beans.length);
