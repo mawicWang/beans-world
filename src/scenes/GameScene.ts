@@ -16,7 +16,7 @@ export default class GameScene extends Phaser.Scene {
     this.physics.add.collider(this.beanGroup, this.beanGroup);
 
     // Draw visual bounds
-    this.drawBounds();
+    this.drawBounds(this.scale.width, this.scale.height);
     this.physics.world.setBounds(0, 0, this.scale.width, this.scale.height);
 
     // Launch UI Scene
@@ -69,7 +69,7 @@ export default class GameScene extends Phaser.Scene {
   resize(gameSize: Phaser.Structs.Size) {
     this.cameras.main.setViewport(0, 0, gameSize.width, gameSize.height);
     this.physics.world.setBounds(0, 0, gameSize.width, gameSize.height);
-    this.drawBounds();
+    this.drawBounds(gameSize.width, gameSize.height);
   }
 
   update(time: number, delta: number) {
@@ -80,7 +80,7 @@ export default class GameScene extends Phaser.Scene {
     return this.beans;
   }
 
-  private drawBounds() {
+  private drawBounds(width: number, height: number) {
     if (!this.boundsGraphics) {
       this.boundsGraphics = this.add.graphics();
       // Ensure it's drawn below beans but above background
@@ -89,7 +89,8 @@ export default class GameScene extends Phaser.Scene {
     this.boundsGraphics.clear();
 
     // Draw a border around the screen
+    // Inset by half line width (2px) so the 4px stroke is fully within bounds
     this.boundsGraphics.lineStyle(4, 0x666666);
-    this.boundsGraphics.strokeRect(0, 0, this.scale.width, this.scale.height);
+    this.boundsGraphics.strokeRect(2, 2, width - 4, height - 4);
   }
 }
