@@ -44,8 +44,20 @@ export default class Bean extends Phaser.GameObjects.Container {
     this.bodyGraphics = scene.add.graphics();
     this.add(this.bodyGraphics);
 
-    // Enable physics body for movement
-    scene.physics.world.enable(this);
+    // Initialize tail at head position
+    this.tailPos = new Phaser.Math.Vector2(x, y);
+    this.tailVelocity = new Phaser.Math.Vector2(0, 0);
+
+    // Initial state
+    this.setIdle();
+  }
+
+  public setupPhysics() {
+    // Enable physics body for movement if not already enabled
+    if (!this.body) {
+      this.scene.physics.world.enable(this);
+    }
+
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setCircle(this.baseRadius);
     body.setOffset(-this.baseRadius, -this.baseRadius);
@@ -53,13 +65,6 @@ export default class Bean extends Phaser.GameObjects.Container {
     // Add drag for the "Decelerate" phase
     body.setDrag(400);
     body.setBounce(0.5);
-
-    // Initialize tail at head position
-    this.tailPos = new Phaser.Math.Vector2(x, y);
-    this.tailVelocity = new Phaser.Math.Vector2(0, 0);
-
-    // Initial state
-    this.setIdle();
   }
 
   private setIdle() {
@@ -70,6 +75,7 @@ export default class Bean extends Phaser.GameObjects.Container {
 
   update(time: number, _delta: number) {
     const body = this.body as Phaser.Physics.Arcade.Body;
+    if (!body) return; // Safety check in case update is called before physics setup
 
     // 1. State Machine
     switch (this.moveState) {

@@ -60,6 +60,7 @@ export default class GameScene extends Phaser.Scene {
     this.add.existing(bean);
     this.beans.push(bean);
     this.beanGroup.add(bean);
+    bean.setupPhysics();
 
     // Notify UI of new count via registry
     this.registry.set('beanCount', this.beans.length);
