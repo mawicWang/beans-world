@@ -2,6 +2,7 @@
 
 A 2D sandbox game built with Phaser, Vite, and TypeScript.
 
+
 ## Development
 
 1. Install dependencies:
