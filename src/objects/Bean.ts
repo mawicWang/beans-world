@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import type GameScene from '../scenes/GameScene';
 
 enum MoveState {
   IDLE,
@@ -81,10 +82,30 @@ export default class Bean extends Phaser.GameObjects.Container {
         break;
 
       case MoveState.CHARGING:
-        // Orient towards target while charging
+        // Orient towards target while charging, with separation from other beans
         if (this.moveTarget) {
-             const angle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
-             this.facingAngle = angle;
+          const targetAngle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
+
+          // Calculate separation vector
+          const separationVector = this.getSeparationVector();
+
+          if (separationVector.length() > 0) {
+            // Combine target direction and separation direction
+            // We do this by adding vectors: Target Vector + Separation Vector
+
+            // Vector towards target (normalized)
+            const targetVec = new Phaser.Math.Vector2(Math.cos(targetAngle), Math.sin(targetAngle));
+
+            // Weighting: How much we prioritize separation vs target
+            // Separation vector is already weighted by inverse distance (stronger when closer)
+            // But we might need to tune the mix.
+            const separationWeight = 2.5; // Strong repulsion to ensure they don't stick
+
+            const combinedVec = targetVec.add(separationVector.scale(separationWeight));
+            this.facingAngle = combinedVec.angle();
+          } else {
+            this.facingAngle = targetAngle;
+          }
         }
 
         if (time > this.stateTimer) {
@@ -162,6 +183,47 @@ export default class Bean extends Phaser.GameObjects.Container {
     this.getLocalPoint(this.tailPos.x, this.tailPos.y, localTail);
 
     this.drawJelly(localTail);
+  }
+
+  private getSeparationVector(): Phaser.Math.Vector2 {
+    const separationRadius = 60; // How close is "too close"
+    const separationForce = new Phaser.Math.Vector2(0, 0);
+
+    // Cast scene to GameScene to access getBeans
+    // We can assume scene is GameScene based on usage
+    const scene = this.scene as unknown as GameScene;
+    if (typeof scene.getBeans !== 'function') return separationForce; // Safety check
+
+    const beans = scene.getBeans();
+    let count = 0;
+
+    for (const other of beans) {
+      if (other === this) continue;
+
+      const dist = Phaser.Math.Distance.Between(this.x, this.y, other.x, other.y);
+
+      if (dist < separationRadius && dist > 0) {
+        // Vector away from other
+        const diff = new Phaser.Math.Vector2(this.x - other.x, this.y - other.y);
+        diff.normalize();
+
+        // Weight by distance (closer = stronger)
+        diff.scale(1.0 / dist);
+
+        separationForce.add(diff);
+        count++;
+      }
+    }
+
+    if (count > 0) {
+      // Average
+      separationForce.scale(1.0 / count);
+      // Normalize to get direction, but keep magnitude for importance?
+      // Actually standard boids separation is usually just normalized sum.
+      separationForce.normalize();
+    }
+
+    return separationForce;
   }
 
   private pickRandomTarget() {
