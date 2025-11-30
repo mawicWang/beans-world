@@ -21,9 +21,9 @@ export default class Bean extends Phaser.GameObjects.Container {
   private tailVelocity: Phaser.Math.Vector2;
 
   // Constants
-  private readonly SPRING_STIFFNESS = 0.05;
-  private readonly SPRING_DAMPING = 0.75;
-  private readonly ROPE_LENGTH = 10; // Slack length for "rope" feel
+  private readonly SPRING_STIFFNESS = 0.1;
+  private readonly SPRING_DAMPING = 0.6;
+  private readonly ROPE_LENGTH = 0; // Slack length for "rope" feel
   private readonly BURST_SPEED = 200; // Decreased for smoother movement
   private readonly CHARGE_DURATION = 300; // ms
   private readonly IDLE_DURATION_MIN = 500;
@@ -132,6 +132,14 @@ export default class Bean extends Phaser.GameObjects.Container {
         // Normalize direction (dx/dist, dy/dist) and scale by force
         ax = (dx / currentDist) * force;
         ay = (dy / currentDist) * force;
+    } else {
+        // Force back to center if inside slack (though slack is now 0)
+        // This ensures it centers perfectly
+         const force = currentDist * this.SPRING_STIFFNESS;
+         if (currentDist > 0) {
+             ax = (dx / currentDist) * force;
+             ay = (dy / currentDist) * force;
+         }
     }
 
     // Update velocity
@@ -180,7 +188,10 @@ export default class Bean extends Phaser.GameObjects.Container {
     this.bodyGraphics.clear();
 
     // Calculate geometry
-    const dist = tailOffset.length();
+    let dist = tailOffset.length();
+
+    // Snap to 0 if very small to ensure perfect circle
+    if (dist < 0.5) dist = 0;
 
     // Deformation: As distance increases, Head grows slightly, Tail shrinks
     // Limit dist to avoid breaking geometry
