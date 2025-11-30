@@ -22,7 +22,7 @@ export default class Bean extends Phaser.GameObjects.Container {
   // Constants
   private readonly SPRING_STIFFNESS = 0.08;
   private readonly SPRING_DAMPING = 0.75;
-  private readonly BURST_SPEED = 300; // Increased for pulse effect
+  private readonly BURST_SPEED = 200; // Decreased for smoother movement
   private readonly CHARGE_DURATION = 300; // ms
   private readonly IDLE_DURATION_MIN = 500;
   private readonly IDLE_DURATION_MAX = 2000;
@@ -182,65 +182,46 @@ export default class Bean extends Phaser.GameObjects.Container {
     this.bodyGraphics.fillStyle(this.mainColor, 0.9);
     this.bodyGraphics.lineStyle(2, 0x1a5f8a, 1.0); // Darker border
 
-    // If distance is very small, just draw one circle
-    if (dist < 2) {
-        this.bodyGraphics.fillCircle(0, 0, this.baseRadius);
-        this.bodyGraphics.strokeCircle(0, 0, this.baseRadius);
-    } else {
-        // Draw connected shape
-        // Get angle from Tail to Head
-        const angle = Phaser.Math.Angle.Between(tx, ty, hx, hy);
+    // Draw connected shape
+    // Get angle from Tail to Head
+    const angle = Phaser.Math.Angle.Between(tx, ty, hx, hy);
 
-        // Calculate tangent points
-        // We want a convex hull around two circles.
-        // For unequal radii, the offset angle is acos((r1 - r2) / d).
+    // Calculate tangent points
+    // We want a convex hull around two circles.
+    // For unequal radii, the offset angle is acos((r1 - r2) / d).
 
-        let offsetAngle = Math.PI / 2;
-        if (dist > Math.abs(headRadius - tailRadius)) {
-            offsetAngle = Math.acos((headRadius - tailRadius) / dist);
-        }
-
-        const h2x = hx + Math.cos(angle - offsetAngle) * headRadius;
-        const h2y = hy + Math.sin(angle - offsetAngle) * headRadius;
-
-        const t1x = tx + Math.cos(angle + offsetAngle) * tailRadius;
-        const t1y = ty + Math.sin(angle + offsetAngle) * tailRadius;
-
-        // Draw Head
-        this.bodyGraphics.beginPath();
-        this.bodyGraphics.arc(hx, hy, headRadius, angle - offsetAngle, angle + offsetAngle, false);
-        // Line to Tail 1
-        this.bodyGraphics.lineTo(t1x, t1y);
-        // Tail Arc
-        this.bodyGraphics.arc(tx, ty, tailRadius, angle + offsetAngle, angle - offsetAngle, false);
-        // Line back to Head 2
-        this.bodyGraphics.lineTo(h2x, h2y);
-        this.bodyGraphics.closePath();
-
-        this.bodyGraphics.fillPath();
-        this.bodyGraphics.strokePath();
+    let offsetAngle = Math.PI / 2;
+    const rDiff = headRadius - tailRadius;
+    if (dist > Math.abs(rDiff)) {
+        offsetAngle = Math.acos(rDiff / dist);
     }
 
-    // Draw Eyes (Cute Identity)
-    // Eyes are on the "Head".
-    // Since we rotate the container to face movement direction, "Front" is Angle 0 relative to container?
-    // Actually, `rotation` property rotates the whole container.
-    // If we move Right (0 deg), we want eyes at (Right side).
-    // Let's place eyes relative to Head (0,0)
+    const h2x = hx + Math.cos(angle - offsetAngle) * headRadius;
+    const h2y = hy + Math.sin(angle - offsetAngle) * headRadius;
 
-    // Eye positions relative to Head center, assuming "Face Forward" is +X axis
-    const eyeOffsetX = headRadius * 0.4;
-    const eyeOffsetY = headRadius * 0.35;
-    const eyeSize = headRadius * 0.25;
+    const t1x = tx + Math.cos(angle + offsetAngle) * tailRadius;
+    const t1y = ty + Math.sin(angle + offsetAngle) * tailRadius;
 
-    this.bodyGraphics.fillStyle(0xffffff);
-    this.bodyGraphics.fillCircle(eyeOffsetX, -eyeOffsetY, eyeSize);
-    this.bodyGraphics.fillCircle(eyeOffsetX, eyeOffsetY, eyeSize);
+    // Draw Head
+    this.bodyGraphics.beginPath();
+    this.bodyGraphics.arc(hx, hy, headRadius, angle - offsetAngle, angle + offsetAngle, false);
+    // Line to Tail 1
+    this.bodyGraphics.lineTo(t1x, t1y);
+    // Tail Arc
+    this.bodyGraphics.arc(tx, ty, tailRadius, angle + offsetAngle, angle - offsetAngle, false);
+    // Line back to Head 2
+    this.bodyGraphics.lineTo(h2x, h2y);
+    this.bodyGraphics.closePath();
 
-    // Pupils
-    this.bodyGraphics.fillStyle(0x000000);
-    this.bodyGraphics.fillCircle(eyeOffsetX + 1, -eyeOffsetY, eyeSize * 0.4);
-    this.bodyGraphics.fillCircle(eyeOffsetX + 1, eyeOffsetY, eyeSize * 0.4);
+    this.bodyGraphics.fillPath();
+    this.bodyGraphics.strokePath();
+
+    // Direction Indicator (Black Dot)
+    const indicatorSize = 3;
+    const indicatorOffset = headRadius * 0.6; // Position it forward
+
+    this.bodyGraphics.fillStyle(0x000000, 0.8);
+    this.bodyGraphics.fillCircle(indicatorOffset, 0, indicatorSize);
 
     // Highlight (Shiny jelly)
     this.bodyGraphics.fillStyle(0xffffff, 0.4);
