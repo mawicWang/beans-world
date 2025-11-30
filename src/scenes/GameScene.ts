@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
-import Bean from '../objects/Bean';
+import Bean, { MoveState } from '../objects/Bean';
 import Food from '../objects/Food';
+import Cocoon from '../objects/Cocoon';
 
 export default class GameScene extends Phaser.Scene {
   private beans: Bean[] = [];
@@ -26,6 +27,14 @@ export default class GameScene extends Phaser.Scene {
         const bean = obj1 as Bean;
         const food = obj2 as Food;
         bean.eat(food);
+    });
+
+    // Collider for physical separation
+    this.physics.add.collider(this.beanGroup, this.beanGroup);
+
+    // Overlap for Reproduction Trigger (avoids physics solver interference)
+    this.physics.add.overlap(this.beanGroup, this.beanGroup, (obj1, obj2) => {
+        this.checkReproductionOverlap(obj1 as Bean, obj2 as Bean);
     });
 
     // Draw visual bounds
@@ -74,10 +83,10 @@ export default class GameScene extends Phaser.Scene {
     this.spawnBean(pointer.x, pointer.y);
   }
 
-  spawnBean(x?: number, y?: number) {
+  spawnBean(x?: number, y?: number, startSatiety: number = 80, isAdult: boolean = true) {
     const spawnX = x ?? Phaser.Math.Between(50, this.scale.width - 50);
     const spawnY = y ?? Phaser.Math.Between(50, this.scale.height - 50);
-    const bean = new Bean(this, spawnX, spawnY);
+    const bean = new Bean(this, spawnX, spawnY, startSatiety, isAdult);
     this.add.existing(bean);
     this.beans.push(bean);
     this.beanGroup.add(bean);
@@ -145,6 +154,38 @@ export default class GameScene extends Phaser.Scene {
 
       this.registry.set('beanCount', this.beans.length);
       this.game.events.emit('UPDATE_BEAN_COUNT', this.beans.length);
+  }
+
+  private checkReproductionOverlap(bean1: Bean, bean2: Bean) {
+      // Check if both are seeking mate
+      // Note: Overlap runs every frame they touch, so we need to be careful to only trigger once.
+      // Checking 'active' is the key.
+      if (bean1.active && bean2.active &&
+          bean1.moveState === MoveState.SEEKING_MATE &&
+          bean2.moveState === MoveState.SEEKING_MATE) {
+
+          console.log(`Reproduction triggered between beans at ${bean1.x},${bean1.y}`);
+          this.startReproduction(bean1, bean2);
+      }
+  }
+
+  private startReproduction(parent1: Bean, parent2: Bean) {
+      console.log("Starting reproduction logic execution...");
+      // Calculate mid point
+      const midX = (parent1.x + parent2.x) / 2;
+      const midY = (parent1.y + parent2.y) / 2;
+
+      const totalSatiety = parent1.satiety + parent2.satiety;
+      const color1 = parent1.getMainColor();
+      const color2 = parent2.getMainColor();
+
+      // Create Cocoon
+      const cocoon = new Cocoon(this, midX, midY, totalSatiety, color1, color2);
+      this.add.existing(cocoon);
+
+      // Remove parents
+      this.removeBean(parent1);
+      this.removeBean(parent2);
   }
 
   private drawBounds(width: number, height: number) {
