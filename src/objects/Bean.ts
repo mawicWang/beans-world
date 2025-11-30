@@ -2,11 +2,12 @@ import Phaser from 'phaser';
 import type GameScene from '../scenes/GameScene';
 import Food from './Food';
 
-enum MoveState {
+export enum MoveState {
   IDLE,
   CHARGING,
   BURSTING,
-  DECELERATING
+  DECELERATING,
+  SEEKING_MATE
 }
 
 export default class Bean extends Phaser.GameObjects.Container {
@@ -15,10 +16,11 @@ export default class Bean extends Phaser.GameObjects.Container {
   private statusText: Phaser.GameObjects.Text;
 
   // Physics (Head)
-  private moveState: MoveState = MoveState.IDLE;
+  public moveState: MoveState = MoveState.IDLE;
   private stateTimer: number = 0;
   private moveTarget: Phaser.Math.Vector2 | null = null;
   private facingAngle: number = 0;
+  private isSeekingMate: boolean = false;
 
   // Physics (Tail Spring)
   private tailPos: Phaser.Math.Vector2;
@@ -26,6 +28,10 @@ export default class Bean extends Phaser.GameObjects.Container {
 
   // Stats
   public satiety: number = 80;
+  public isAdult: boolean = true;
+  private age: number = 0;
+  private reproCooldown: number = 0;
+  private readonly MATURITY_AGE = 60000; // 1 minute to grow up
   private readonly VISION_RADIUS = 200;
   private isFull: boolean = false;
 
@@ -40,10 +46,15 @@ export default class Bean extends Phaser.GameObjects.Container {
 
   // Visuals
   private baseRadius = 15; // Slightly smaller to allow growth
+  private currentRadius = 15;
   private mainColor: number;
 
-  constructor(scene: Phaser.Scene, x: number, y: number) {
+  constructor(scene: Phaser.Scene, x: number, y: number, startSatiety: number = 80, startAdult: boolean = true) {
     super(scene, x, y);
+
+    this.satiety = startSatiety;
+    this.isAdult = startAdult;
+    this.currentRadius = this.isAdult ? this.baseRadius : this.baseRadius * 0.6;
 
     // Pick a jelly-like color (variations of blue/cyan/purple)
     const colors = [0x4aa3df, 0x50c8e0, 0x6e8cd4, 0x4dd0e1];
@@ -79,6 +90,10 @@ export default class Bean extends Phaser.GameObjects.Container {
     this.setIdle();
   }
 
+  public getMainColor(): number {
+    return this.mainColor;
+  }
+
   public setupPhysics() {
     // Enable physics body for movement if not already enabled
     if (!this.body) {
@@ -86,8 +101,8 @@ export default class Bean extends Phaser.GameObjects.Container {
     }
 
     const body = this.body as Phaser.Physics.Arcade.Body;
-    body.setCircle(this.baseRadius);
-    body.setOffset(-this.baseRadius, -this.baseRadius);
+    body.setCircle(this.currentRadius);
+    body.setOffset(-this.currentRadius, -this.currentRadius);
     body.setCollideWorldBounds(true);
     // Add drag for the "Decelerate" phase
     body.setDrag(400);
@@ -96,6 +111,7 @@ export default class Bean extends Phaser.GameObjects.Container {
 
   private setIdle() {
     this.moveState = MoveState.IDLE;
+    this.isSeekingMate = false;
     this.stateTimer = this.scene.time.now + Phaser.Math.Between(this.IDLE_DURATION_MIN, this.IDLE_DURATION_MAX);
     this.moveTarget = null;
   }
@@ -104,7 +120,22 @@ export default class Bean extends Phaser.GameObjects.Container {
     const body = this.body as Phaser.Physics.Arcade.Body;
     if (!body) return; // Safety check in case update is called before physics setup
 
-    // 0. Satiety Decay
+    // 0. Growth & Lifecycle
+    if (!this.isAdult) {
+        this.age += delta;
+        if (this.age >= this.MATURITY_AGE) {
+            this.isAdult = true;
+            this.currentRadius = this.baseRadius;
+            body.setCircle(this.currentRadius);
+            body.setOffset(-this.currentRadius, -this.currentRadius);
+        }
+    }
+
+    if (this.reproCooldown > 0) {
+        this.reproCooldown -= delta;
+    }
+
+    // 0.5. Satiety Decay
     const decayRate = body.speed > 5 ? 0.5 : 0.1;
     this.satiety -= decayRate * (delta / 1000);
     this.statusText.setText(Math.floor(this.satiety).toString());
@@ -121,6 +152,27 @@ export default class Bean extends Phaser.GameObjects.Container {
         this.isFull = false;
     }
 
+    // Reproduction Trigger Check (Only if Adult, Idle, and High Satiety)
+    if (this.isAdult && this.satiety > 60 && this.reproCooldown <= 0 && this.moveState === MoveState.IDLE) {
+         // Probability check based on satiety
+         // Max satiety 100 -> 40 points above 60.
+         // Let's say at 100 satiety, 5% chance per second?
+         // At 60fps, delta is ~16ms.
+         // Let's do a simple random check.
+         // 0.0001 per frame * 60 = 0.6% per second.
+         // Let's try 0.001 -> 6% per second.
+         if (Math.random() < ((this.satiety - 60) * 0.001)) {
+             this.moveState = MoveState.SEEKING_MATE;
+             this.isSeekingMate = true;
+         }
+    }
+
+    // If we dropped below 60, stop seeking
+    if (this.isSeekingMate && this.satiety < 60) {
+        this.isSeekingMate = false;
+        this.setIdle();
+    }
+
     // 1. State Machine
     switch (this.moveState) {
       case MoveState.IDLE:
@@ -128,6 +180,27 @@ export default class Bean extends Phaser.GameObjects.Container {
           this.pickTarget();
           this.moveState = MoveState.CHARGING;
           this.stateTimer = time + this.CHARGE_DURATION;
+        }
+        break;
+
+      case MoveState.SEEKING_MATE:
+        // Continuously update target to nearest mate
+        this.pickMateTarget();
+        // Move towards it like CHARGING but maybe sustained?
+        // Reuse Charging logic for movement
+        if (this.moveTarget) {
+             const targetAngle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
+             this.facingAngle = targetAngle;
+             // Don't separate from other beans too much if we want to merge!
+        } else {
+             // No mate found, go back to idle
+             this.setIdle();
+        }
+
+        // Burst periodically
+         if (time > this.stateTimer) {
+          this.burst();
+          this.stateTimer = time + this.CHARGE_DURATION * 2; // Slower burst rate when seeking love?
         }
         break;
 
@@ -178,7 +251,13 @@ export default class Bean extends Phaser.GameObjects.Container {
           this.stateTimer = time + this.CHARGE_DURATION;
         } else if (body.speed < 10) {
            body.setVelocity(0,0);
-           this.setIdle();
+
+           if (this.isSeekingMate) {
+               this.moveState = MoveState.SEEKING_MATE;
+               this.stateTimer = time; // Ready to burst/seek again immediately or soon
+           } else {
+               this.setIdle();
+           }
         }
         break;
     }
@@ -276,6 +355,31 @@ export default class Bean extends Phaser.GameObjects.Container {
     return separationForce;
   }
 
+  private pickMateTarget() {
+      const scene = this.scene as unknown as GameScene;
+      const beans = scene.getBeans();
+      let closestDist = Infinity;
+      let target: Bean | null = null;
+
+      for (const other of beans) {
+          if (other === this) continue;
+          if (other.moveState !== MoveState.SEEKING_MATE) continue;
+
+          const dist = Phaser.Math.Distance.Between(this.x, this.y, other.x, other.y);
+          if (dist < closestDist) {
+              closestDist = dist;
+              target = other;
+          }
+      }
+
+      if (target) {
+          this.moveTarget = new Phaser.Math.Vector2(target.x, target.y);
+      } else {
+          // If no mate found, maybe drift randomly or stay put
+          this.moveTarget = null;
+      }
+  }
+
   private pickTarget() {
     const scene = this.scene as unknown as GameScene;
 
@@ -344,8 +448,8 @@ export default class Bean extends Phaser.GameObjects.Container {
     // Limit dist to avoid breaking geometry
     const stretchFactor = Math.min(dist, 100) / 100; // 0 to 1
 
-    const headRadius = this.baseRadius * (1 + stretchFactor * 0.2);
-    const tailRadius = this.baseRadius * (1 - stretchFactor * 0.7); // Tail gets smaller
+    const headRadius = this.currentRadius * (1 + stretchFactor * 0.2);
+    const tailRadius = this.currentRadius * (1 - stretchFactor * 0.7); // Tail gets smaller
 
     // Head is always at (0,0)
     const hx = 0;
