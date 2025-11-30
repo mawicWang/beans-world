@@ -20,7 +20,7 @@ export default class Bean extends Phaser.GameObjects.Container {
   private tailVelocity: Phaser.Math.Vector2;
 
   // Constants
-  private readonly SPRING_STIFFNESS = 0.08;
+  private readonly SPRING_STIFFNESS = 0.05;
   private readonly SPRING_DAMPING = 0.75;
   private readonly BURST_SPEED = 200; // Decreased for smoother movement
   private readonly CHARGE_DURATION = 300; // ms
@@ -96,7 +96,14 @@ export default class Bean extends Phaser.GameObjects.Container {
         break;
 
       case MoveState.DECELERATING:
-        if (body.speed < 10) {
+        const dist = this.moveTarget ? Phaser.Math.Distance.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y) : 0;
+
+        // If we are far from the target, start the next hop before stopping completely
+        // to create a smoother, continuous movement.
+        if (this.moveTarget && dist > 100 && body.speed < 150) {
+          this.moveState = MoveState.CHARGING;
+          this.stateTimer = time + this.CHARGE_DURATION;
+        } else if (body.speed < 10) {
            body.setVelocity(0,0);
            this.setIdle();
         }
@@ -168,7 +175,7 @@ export default class Bean extends Phaser.GameObjects.Container {
     const stretchFactor = Math.min(dist, 100) / 100; // 0 to 1
 
     const headRadius = this.baseRadius * (1 + stretchFactor * 0.2);
-    const tailRadius = this.baseRadius * (1 - stretchFactor * 0.4); // Tail gets smaller
+    const tailRadius = this.baseRadius * (1 - stretchFactor * 0.7); // Tail gets smaller
 
     // Head is always at (0,0)
     const hx = 0;
