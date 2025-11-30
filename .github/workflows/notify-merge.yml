@@ -4,6 +4,10 @@ on:
   pull_request:
     types: [closed]
 
+permissions:
+  actions: write
+  contents: read
+
 jobs:
   notify-merge:
     runs-on: ubuntu-latest
@@ -35,3 +39,15 @@ jobs:
               process.exit(1);
             });
           '
+
+      - name: Trigger Deployment
+        if: github.event.pull_request.merged == true
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          HAS_PAT: ${{ secrets.GH_PAT != '' }}
+        run: |
+          echo "Triggering deployment workflow..."
+          if [ "$HAS_PAT" == "false" ]; then
+            echo "::warning::Using GITHUB_TOKEN. Recursive workflows may not trigger. Please set GH_PAT secret for reliable auto-deployment."
+          fi
+          gh workflow run deploy.yml --ref main
