@@ -1,0 +1,37 @@
+name: Notify on Merge
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  notify-merge:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+    steps:
+      - name: Send Bark Notification
+        env:
+          BARK_KEY: ${{ secrets.BARK_KEY }}
+          TITLE: "PR Merged: ${{ github.event.pull_request.title }}"
+          BODY: "Merged by ${{ github.actor }}. PR #${{ github.event.pull_request.number }}"
+        run: |
+          node -e '
+            const https = require("https");
+            const key = process.env.BARK_KEY;
+            const title = encodeURIComponent(process.env.TITLE);
+            const body = encodeURIComponent(process.env.BODY);
+            const url = `https://api.day.app/${key}/${title}/${body}`;
+
+            console.log("Sending notification...");
+            https.get(url, (res) => {
+              if (res.statusCode === 200) {
+                console.log("Notification sent.");
+              } else {
+                console.error(`Failed with status: ${res.statusCode}`);
+                process.exit(1);
+              }
+            }).on("error", (e) => {
+              console.error(e);
+              process.exit(1);
+            });
+          '
