@@ -9,6 +9,9 @@ export default class GameScene extends Phaser.Scene {
   }
 
   create() {
+    // Launch UI Scene
+    this.scene.launch('UIScene');
+
     // Initial random beans
     for (let i = 0; i < 5; i++) {
       this.spawnBean();
@@ -20,6 +23,11 @@ export default class GameScene extends Phaser.Scene {
     // Handle touch/click to interact and unlock audio
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       this.handleInput(pointer);
+    });
+
+    // Listen for spawn requests from UI
+    this.game.events.on('SPAWN_BEAN', () => {
+      this.spawnBean();
     });
   }
 
@@ -41,6 +49,10 @@ export default class GameScene extends Phaser.Scene {
     const bean = new Bean(this, spawnX, spawnY);
     this.add.existing(bean);
     this.beans.push(bean);
+
+    // Notify UI of new count via registry
+    this.registry.set('beanCount', this.beans.length);
+    this.game.events.emit('UPDATE_BEAN_COUNT', this.beans.length);
   }
 
   resize(gameSize: Phaser.Structs.Size) {
