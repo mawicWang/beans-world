@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import type GameScene from '../scenes/GameScene';
+import Food from './Food';
 
 enum MoveState {
   IDLE,
@@ -10,6 +11,8 @@ enum MoveState {
 
 export default class Bean extends Phaser.GameObjects.Container {
   private bodyGraphics: Phaser.GameObjects.Graphics;
+  private statusPanel: Phaser.GameObjects.Container;
+  private statusText: Phaser.GameObjects.Text;
 
   // Physics (Head)
   private moveState: MoveState = MoveState.IDLE;
@@ -20,6 +23,11 @@ export default class Bean extends Phaser.GameObjects.Container {
   // Physics (Tail Spring)
   private tailPos: Phaser.Math.Vector2;
   private tailVelocity: Phaser.Math.Vector2;
+
+  // Stats
+  public satiety: number = 80;
+  private readonly VISION_RADIUS = 200;
+  private isFull: boolean = false;
 
   // Constants
   private readonly SPRING_STIFFNESS = 0.1;
@@ -43,6 +51,25 @@ export default class Bean extends Phaser.GameObjects.Container {
 
     this.bodyGraphics = scene.add.graphics();
     this.add(this.bodyGraphics);
+
+    // Status Panel
+    this.statusPanel = scene.add.container(25, -25);
+    const panelBg = scene.add.rectangle(0, 0, 50, 20, 0x000000, 0.5);
+    this.statusText = scene.add.text(0, 0, '80', { fontSize: '12px', color: '#fff' }).setOrigin(0.5);
+    this.statusPanel.add([panelBg, this.statusText]);
+    this.statusPanel.setVisible(false);
+    this.add(this.statusPanel);
+
+    // Listen for toggle event
+    const toggleHandler = (visible: boolean) => {
+        this.statusPanel.setVisible(visible);
+    };
+    scene.game.events.on('TOGGLE_BEAN_STATS', toggleHandler);
+
+    // Clean up listener when destroyed
+    this.once('destroy', () => {
+        scene.game.events.off('TOGGLE_BEAN_STATS', toggleHandler);
+    });
 
     // Initialize tail at head position
     this.tailPos = new Phaser.Math.Vector2(x, y);
@@ -73,15 +100,32 @@ export default class Bean extends Phaser.GameObjects.Container {
     this.moveTarget = null;
   }
 
-  update(time: number, _delta: number) {
+  update(time: number, delta: number) {
     const body = this.body as Phaser.Physics.Arcade.Body;
     if (!body) return; // Safety check in case update is called before physics setup
+
+    // 0. Satiety Decay
+    const decayRate = body.speed > 5 ? 0.5 : 0.1;
+    this.satiety -= decayRate * (delta / 1000);
+    this.statusText.setText(Math.floor(this.satiety).toString());
+
+    if (this.satiety <= 0) {
+        // Die
+        const scene = this.scene as unknown as GameScene;
+        scene.removeBean(this);
+        return;
+    } else if (this.satiety >= 100) {
+        this.satiety = 100;
+        this.isFull = true;
+    } else if (this.satiety < 90) {
+        this.isFull = false;
+    }
 
     // 1. State Machine
     switch (this.moveState) {
       case MoveState.IDLE:
         if (time > this.stateTimer) {
-          this.pickRandomTarget();
+          this.pickTarget();
           this.moveState = MoveState.CHARGING;
           this.stateTimer = time + this.CHARGE_DURATION;
         }
@@ -232,12 +276,47 @@ export default class Bean extends Phaser.GameObjects.Container {
     return separationForce;
   }
 
-  private pickRandomTarget() {
-    const scene = this.scene;
-    const padding = 50;
-    const tx = Phaser.Math.Between(padding, scene.scale.width - padding);
-    const ty = Phaser.Math.Between(padding, scene.scale.height - padding);
-    this.moveTarget = new Phaser.Math.Vector2(tx, ty);
+  private pickTarget() {
+    const scene = this.scene as unknown as GameScene;
+
+    // Check for food if not full
+    let foodTarget: Phaser.GameObjects.GameObject | null = null;
+    if (!this.isFull) {
+        const foods = scene.getFoods();
+        let closestDist = this.VISION_RADIUS;
+
+        for (const food of foods) {
+            // Check if food is still valid/active
+            if (!food || !food.scene) continue;
+
+            const dist = Phaser.Math.Distance.Between(this.x, this.y, food.x, food.y);
+            if (dist < closestDist) {
+                closestDist = dist;
+                foodTarget = food;
+            }
+        }
+    }
+
+    if (foodTarget) {
+        const food = foodTarget as Food;
+        this.moveTarget = new Phaser.Math.Vector2(food.x, food.y);
+    } else {
+        // Random
+        const padding = 50;
+        const tx = Phaser.Math.Between(padding, scene.scale.width - padding);
+        const ty = Phaser.Math.Between(padding, scene.scale.height - padding);
+        this.moveTarget = new Phaser.Math.Vector2(tx, ty);
+    }
+  }
+
+  public eat(food: Food) {
+      // Only eat if not full
+      if (this.isFull) return;
+
+      this.satiety += food.satiety;
+      // Remove food
+      const scene = this.scene as unknown as GameScene;
+      scene.removeFood(food);
   }
 
   private burst() {

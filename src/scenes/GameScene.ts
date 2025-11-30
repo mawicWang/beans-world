@@ -1,9 +1,12 @@
 import Phaser from 'phaser';
 import Bean from '../objects/Bean';
+import Food from '../objects/Food';
 
 export default class GameScene extends Phaser.Scene {
   private beans: Bean[] = [];
   private beanGroup!: Phaser.Physics.Arcade.Group;
+  private foods: Food[] = [];
+  private foodGroup!: Phaser.Physics.Arcade.Group;
   private boundsGraphics!: Phaser.GameObjects.Graphics;
 
   constructor() {
@@ -14,6 +17,16 @@ export default class GameScene extends Phaser.Scene {
     // Create physics group for beans
     this.beanGroup = this.physics.add.group();
     this.physics.add.collider(this.beanGroup, this.beanGroup);
+
+    // Create physics group for food
+    this.foodGroup = this.physics.add.group();
+
+    // Overlap for eating
+    this.physics.add.overlap(this.beanGroup, this.foodGroup, (obj1, obj2) => {
+        const bean = obj1 as Bean;
+        const food = obj2 as Food;
+        bean.eat(food);
+    });
 
     // Draw visual bounds
     this.drawBounds(this.scale.width, this.scale.height);
@@ -38,6 +51,14 @@ export default class GameScene extends Phaser.Scene {
     // Listen for spawn requests from UI
     this.game.events.on('SPAWN_BEAN', () => {
       this.spawnBean();
+    });
+
+    // Food Spawning Timer
+    this.time.addEvent({
+        delay: 3000,
+        callback: this.spawnFood,
+        callbackScope: this,
+        loop: true
     });
   }
 
@@ -74,11 +95,56 @@ export default class GameScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number) {
-    this.beans.forEach(bean => bean.update(time, delta));
+    // Iterate backwards to safely handle removals during update
+    for (let i = this.beans.length - 1; i >= 0; i--) {
+        this.beans[i].update(time, delta);
+    }
   }
 
   public getBeans(): Bean[] {
     return this.beans;
+  }
+
+  public getFoods(): Food[] {
+      return this.foods;
+  }
+
+  public spawnFood() {
+      const padding = 50;
+      const x = Phaser.Math.Between(padding, this.scale.width - padding);
+      const y = Phaser.Math.Between(padding, this.scale.height - padding);
+
+      const typeRoll = Math.random();
+      let satiety = 1;
+      if (typeRoll > 0.9) satiety = 5;
+      else if (typeRoll > 0.6) satiety = 2;
+
+      const food = new Food(this, x, y, satiety);
+      this.add.existing(food);
+      this.foods.push(food);
+      this.foodGroup.add(food);
+      food.setupPhysics();
+  }
+
+  public removeFood(food: Food) {
+      const index = this.foods.indexOf(food);
+      if (index > -1) {
+          this.foods.splice(index, 1);
+      }
+      this.foodGroup.remove(food);
+      food.destroy();
+  }
+
+  public removeBean(bean: Bean) {
+      const index = this.beans.indexOf(bean);
+      if (index > -1) {
+          this.beans.splice(index, 1);
+      }
+      this.beanGroup.remove(bean);
+      bean.destroy();
+
+      this.registry.set('beanCount', this.beans.length);
+      this.game.events.emit('UPDATE_BEAN_COUNT', this.beans.length);
   }
 
   private drawBounds(width: number, height: number) {
