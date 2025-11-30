@@ -18,6 +18,12 @@ const config: Phaser.Types.Core.GameConfig = {
   scale: {
     mode: Phaser.Scale.RESIZE,
     autoCenter: Phaser.Scale.CENTER_BOTH
+  },
+  // Prevent default context menu on right click/long press
+  disableContextMenu: true,
+  render: {
+    pixelArt: false,
+    antialias: true,
   }
 };
 
