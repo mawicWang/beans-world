@@ -43,7 +43,7 @@ jobs:
     steps:
       - name: Send Bark Notification
         env:
-          BARK_KEY: ${{ secrets.BARK_KEY || 'NsFjZ5nhRZNBhrHfcNBwES' }}
+          BARK_KEY: ${{ secrets.BARK_KEY }}
           TITLE: "PR Merged: ${{ github.event.pull_request.title }}"
           BODY: "Merged by ${{ github.actor }}. PR #${{ github.event.pull_request.number }}"
         run: |
