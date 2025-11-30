@@ -3,6 +3,8 @@ import Phaser from 'phaser';
 export default class UIScene extends Phaser.Scene {
   private beanCountText!: Phaser.GameObjects.Text;
   private addButtonContainer!: Phaser.GameObjects.Container;
+  private toggleStatsButtonContainer!: Phaser.GameObjects.Container;
+  private statsVisible: boolean = false;
 
   constructor() {
     super('UIScene');
@@ -16,8 +18,9 @@ export default class UIScene extends Phaser.Scene {
       fontStyle: 'bold'
     });
 
-    // Add Bean Button
+    // Add Buttons
     this.createAddButton();
+    this.createToggleStatsButton();
 
     // Listen for updates
     this.game.events.on('UPDATE_BEAN_COUNT', (count: number) => {
@@ -48,9 +51,6 @@ export default class UIScene extends Phaser.Scene {
     const bg = this.add.rectangle(0, 0, width, height, 0x4caf50); // Green button
     bg.setInteractive({ useHandCursor: true })
       .on('pointerdown', () => {
-        // Prevent click from propagating to GameScene if they overlap (though separate scenes usually handle input separately)
-        // But to be safe, we might want to stop propagation if that was an issue.
-        // For now, just emit.
         this.game.events.emit('SPAWN_BEAN');
       })
       .on('pointerover', () => bg.setFillStyle(0x66bb6a))
@@ -66,10 +66,38 @@ export default class UIScene extends Phaser.Scene {
     this.addButtonContainer.add([bg, text]);
   }
 
+  private createToggleStatsButton() {
+    this.toggleStatsButtonContainer = this.add.container(0, 0);
+
+    const width = 120;
+    const height = 50;
+    const bg = this.add.rectangle(0, 0, width, height, 0x2196F3); // Blue button
+    bg.setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => {
+          this.statsVisible = !this.statsVisible;
+          this.game.events.emit('TOGGLE_BEAN_STATS', this.statsVisible);
+          bg.setFillStyle(this.statsVisible ? 0x1976D2 : 0x2196F3);
+      })
+      .on('pointerover', () => bg.setFillStyle(this.statsVisible ? 0x1565C0 : 0x42A5F5))
+      .on('pointerout', () => bg.setFillStyle(this.statsVisible ? 0x1976D2 : 0x2196F3));
+
+    const text = this.add.text(0, 0, 'Stats', {
+        fontSize: '18px',
+        color: '#ffffff',
+        fontStyle: 'bold'
+    });
+    text.setOrigin(0.5);
+
+    this.toggleStatsButtonContainer.add([bg, text]);
+  }
+
   resize(gameSize: Phaser.Structs.Size) {
     // Position button at top-right with some padding
     if (this.addButtonContainer) {
         this.addButtonContainer.setPosition(gameSize.width - 80, 45);
+    }
+    if (this.toggleStatsButtonContainer) {
+        this.toggleStatsButtonContainer.setPosition(gameSize.width - 80, 105);
     }
   }
 }
