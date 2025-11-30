@@ -16,12 +16,29 @@ export default class GameScene extends Phaser.Scene {
 
     // Handle window resize
     this.scale.on('resize', this.resize, this);
+
+    // Handle touch/click to interact and unlock audio
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      this.handleInput(pointer);
+    });
   }
 
-  spawnBean() {
-    const x = Phaser.Math.Between(50, this.scale.width - 50);
-    const y = Phaser.Math.Between(50, this.scale.height - 50);
-    const bean = new Bean(this, x, y);
+  handleInput(pointer: Phaser.Input.Pointer) {
+    // Unlock audio context if it's suspended (common on mobile)
+    if (this.sound instanceof Phaser.Sound.WebAudioSoundManager) {
+      if (this.sound.context.state === 'suspended') {
+        this.sound.context.resume();
+      }
+    }
+
+    // Spawn a bean at touch location
+    this.spawnBean(pointer.x, pointer.y);
+  }
+
+  spawnBean(x?: number, y?: number) {
+    const spawnX = x ?? Phaser.Math.Between(50, this.scale.width - 50);
+    const spawnY = y ?? Phaser.Math.Between(50, this.scale.height - 50);
+    const bean = new Bean(this, spawnX, spawnY);
     this.add.existing(bean);
     this.beans.push(bean);
   }
