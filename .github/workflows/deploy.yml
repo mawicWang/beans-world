@@ -51,3 +51,38 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Send Bark Notification
+        if: success()
+        env:
+          BARK_KEY: ${{ secrets.BARK_KEY }}
+          TITLE: "Deployment Successful"
+          BODY: "Deployed to GitHub Pages: ${{ steps.deployment.outputs.page_url }}"
+        run: |
+          node -e '
+            const https = require("https");
+            const key = process.env.BARK_KEY;
+
+            if (!key) {
+               console.log("BARK_KEY not set. Skipping notification.");
+               process.exit(0);
+            }
+
+            const title = encodeURIComponent(process.env.TITLE);
+            const body = encodeURIComponent(process.env.BODY);
+            const url = `https://api.day.app/${key}/${title}/${body}`;
+
+            console.log("Sending notification...");
+            https.get(url, (res) => {
+              if (res.statusCode === 200) {
+                console.log("Notification sent.");
+              } else {
+                console.error(`Failed with status: ${res.statusCode}`);
+                // Do not fail the build if notification fails
+                console.log("Continuing...");
+              }
+            }).on("error", (e) => {
+              console.error(e);
+              // Do not fail the build if notification fails
+            });
+          '
