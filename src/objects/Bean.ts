@@ -14,6 +14,7 @@ export default class Bean extends Phaser.GameObjects.Container {
   private moveState: MoveState = MoveState.IDLE;
   private stateTimer: number = 0;
   private moveTarget: Phaser.Math.Vector2 | null = null;
+  private facingAngle: number = 0;
 
   // Physics (Tail Spring)
   private tailPos: Phaser.Math.Vector2;
@@ -22,6 +23,7 @@ export default class Bean extends Phaser.GameObjects.Container {
   // Constants
   private readonly SPRING_STIFFNESS = 0.05;
   private readonly SPRING_DAMPING = 0.75;
+  private readonly ROPE_LENGTH = 10; // Slack length for "rope" feel
   private readonly BURST_SPEED = 200; // Decreased for smoother movement
   private readonly CHARGE_DURATION = 300; // ms
   private readonly IDLE_DURATION_MIN = 500;
@@ -82,7 +84,7 @@ export default class Bean extends Phaser.GameObjects.Container {
         // Orient towards target while charging
         if (this.moveTarget) {
              const angle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
-             this.rotation = angle;
+             this.facingAngle = angle;
         }
 
         if (time > this.stateTimer) {
@@ -110,17 +112,27 @@ export default class Bean extends Phaser.GameObjects.Container {
         break;
     }
 
-    // 2. Tail Physics (Spring System)
+    // 2. Tail Physics (Elastic Rope System)
     // Head position (World)
     const headX = this.x;
     const headY = this.y;
 
-    // Spring force: Pull tail towards head
+    // Vector from Tail to Head
     const dx = headX - this.tailPos.x;
     const dy = headY - this.tailPos.y;
+    const currentDist = Math.sqrt(dx * dx + dy * dy);
 
-    const ax = dx * this.SPRING_STIFFNESS;
-    const ay = dy * this.SPRING_STIFFNESS;
+    let ax = 0;
+    let ay = 0;
+
+    // Apply force only if distance exceeds rope length (slack)
+    if (currentDist > this.ROPE_LENGTH) {
+        // Force proportional to extension beyond rope length
+        const force = (currentDist - this.ROPE_LENGTH) * this.SPRING_STIFFNESS;
+        // Normalize direction (dx/dist, dy/dist) and scale by force
+        ax = (dx / currentDist) * force;
+        ay = (dy / currentDist) * force;
+    }
 
     // Update velocity
     this.tailVelocity.x += ax;
@@ -130,14 +142,14 @@ export default class Bean extends Phaser.GameObjects.Container {
     this.tailVelocity.x *= this.SPRING_DAMPING;
     this.tailVelocity.y *= this.SPRING_DAMPING;
 
-    // Update position (simple Euler integration)
-    // Adjust for delta time if needed, but keeping it simple for consistent feel
+    // Update position
     this.tailPos.x += this.tailVelocity.x;
     this.tailPos.y += this.tailVelocity.y;
 
     // 3. Render
     // Convert World Tail to Local Tail relative to Container
     // This allows us to draw using local coordinates where (0,0) is always the Head
+    // Since the container is NOT rotated, this is just a translation.
     const localTail = new Phaser.Math.Vector2();
     this.getLocalPoint(this.tailPos.x, this.tailPos.y, localTail);
 
@@ -157,7 +169,7 @@ export default class Bean extends Phaser.GameObjects.Container {
     const body = this.body as Phaser.Physics.Arcade.Body;
 
     // Calculate vector
-    const angle = this.rotation;
+    const angle = this.facingAngle;
     this.scene.physics.velocityFromRotation(angle, this.BURST_SPEED, body.velocity);
 
     this.playMoveSound();
@@ -190,7 +202,7 @@ export default class Bean extends Phaser.GameObjects.Container {
     this.bodyGraphics.lineStyle(2, 0x1a5f8a, 1.0); // Darker border
 
     // Draw connected shape
-    // Get angle from Tail to Head
+    // Get angle from Tail to Head for hull calculation
     const angle = Phaser.Math.Angle.Between(tx, ty, hx, hy);
 
     // Calculate tangent points
@@ -224,13 +236,18 @@ export default class Bean extends Phaser.GameObjects.Container {
     this.bodyGraphics.strokePath();
 
     // Direction Indicator (Black Dot)
+    // Position it based on facingAngle
     const indicatorSize = 3;
-    const indicatorOffset = headRadius * 0.6; // Position it forward
+    const indicatorOffset = headRadius * 0.6; // Position it forward relative to head center
+
+    const ix = Math.cos(this.facingAngle) * indicatorOffset;
+    const iy = Math.sin(this.facingAngle) * indicatorOffset;
 
     this.bodyGraphics.fillStyle(0x000000, 0.8);
-    this.bodyGraphics.fillCircle(indicatorOffset, 0, indicatorSize);
+    this.bodyGraphics.fillCircle(ix, iy, indicatorSize);
 
     // Highlight (Shiny jelly)
+    // Keep highlight static (top-left) to simulate fixed light source
     this.bodyGraphics.fillStyle(0xffffff, 0.4);
     this.bodyGraphics.fillCircle(-headRadius*0.3, -headRadius*0.3, headRadius*0.25);
   }
