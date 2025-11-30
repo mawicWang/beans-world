@@ -1,0 +1,36 @@
+name: Auto-merge Jules PRs
+
+on:
+  pull_request:
+    # 即使是 draft，创建时也会触发 opened
+    types: [opened, synchronize, reopened]
+
+jobs:
+  approve-and-merge:
+    runs-on: ubuntu-latest
+    # 替换为 Jules 的实际用户名，例如 'google-jules-bot' 或你看到的那个 bot 名字
+    if: github.actor == 'google-labs-jules[bot]'
+    permissions:
+      pull-requests: write
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Convert Draft to Ready & Enable Auto-merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_URL="${{ github.event.pull_request.html_url }}"
+
+          # 1. 将 PR 标记为 "Ready for Review" (解除 Draft 状态)
+          gh pr ready "$PR_URL"
+
+          # 2. (可选) 自动批准 PR
+          # 如果你的分支保护规则要求必须有人 Approve，取消下面这行的注释：
+          # gh pr review "$PR_URL" --approve --body "Auto-approved Jules changes."
+
+          # 3. 开启自动合并
+          # --auto: 等待 check 通过后合并
+          # --squash: 使用 squash 合并 (也可以改成 --merge 或 --rebase)
+          gh pr merge "$PR_URL" --auto --squash
