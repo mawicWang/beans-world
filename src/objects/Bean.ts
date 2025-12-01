@@ -8,7 +8,11 @@ export enum MoveState {
   BURSTING,
   DECELERATING,
   SEEKING_MATE,
-  MOVING_TO_PARTNER
+  MOVING_TO_PARTNER,
+  HAULING_FOOD,
+  GUARDING,
+  CHASING_ENEMY,
+  FLEEING
 }
 
 export default class Bean extends Phaser.GameObjects.Container {
@@ -16,8 +20,13 @@ export default class Bean extends Phaser.GameObjects.Container {
   private statusPanel: Phaser.GameObjects.Container;
   private statusText: Phaser.GameObjects.Text;
 
+  // Hoarding & Resources
+  private hoardLocation: Phaser.Math.Vector2 | null = null;
+  private carriedFoodData: { satiety: number, attributeBonus?: { type: 'strength' | 'speed' | 'constitution', value: number } } | null = null;
+
   // Physics (Head)
   public moveState: MoveState = MoveState.IDLE;
+  private previousState: MoveState = MoveState.IDLE; // To restore state after deceleration
   private stateTimer: number = 0;
   private moveTarget: Phaser.Math.Vector2 | null = null;
   private facingAngle: number = 0;
@@ -38,6 +47,7 @@ export default class Bean extends Phaser.GameObjects.Container {
   private reproCooldown: number = 0;
   private readonly MATURITY_AGE = 60000; // 1 minute to grow up
   private readonly VISION_RADIUS = 200;
+  private readonly GUARD_VISION_RADIUS = 300;
   private isFull: boolean = false;
 
   // Attributes
@@ -153,10 +163,36 @@ export default class Bean extends Phaser.GameObjects.Container {
 
   private setIdle() {
     this.moveState = MoveState.IDLE;
+    this.previousState = MoveState.IDLE;
     this.isSeekingMate = false;
     this.lockedPartner = null;
     this.stateTimer = Phaser.Math.Between(this.IDLE_DURATION_MIN, this.IDLE_DURATION_MAX);
     this.moveTarget = null;
+  }
+
+  public fleeFrom(source: Phaser.Math.Vector2 | Phaser.GameObjects.GameObject) {
+    this.moveState = MoveState.FLEEING;
+    this.stateTimer = 2000; // Flee for 2 seconds
+
+    // Vector away from source
+    // Use type assertion or check if it has x/y component
+    const sx = (source as any).x;
+    const sy = (source as any).y;
+
+    const angle = Phaser.Math.Angle.Between(sx, sy, this.x, this.y);
+    const dist = 300;
+
+    // Set target away from danger
+    const tx = this.x + Math.cos(angle) * dist;
+    const ty = this.y + Math.sin(angle) * dist;
+
+    // Clamp to bounds
+    const scene = this.scene as unknown as GameScene;
+    const padding = 50;
+    const clampedX = Phaser.Math.Clamp(tx, padding, scene.scale.width - padding);
+    const clampedY = Phaser.Math.Clamp(ty, padding, scene.scale.height - padding);
+
+    this.moveTarget = new Phaser.Math.Vector2(clampedX, clampedY);
   }
 
   private pickRandomTarget() {
@@ -274,12 +310,86 @@ export default class Bean extends Phaser.GameObjects.Container {
 
     switch (this.moveState) {
       case MoveState.IDLE:
+        // Transition to Guarding if near hoard
+        if (this.hoardLocation) {
+            const distToHoard = Phaser.Math.Distance.Between(this.x, this.y, this.hoardLocation.x, this.hoardLocation.y);
+            if (distToHoard < 100) {
+                this.moveState = MoveState.GUARDING;
+                this.stateTimer = Phaser.Math.Between(2000, 4000); // Guard duty duration before checking again or moving slightly
+                break;
+            }
+        }
+
         if (this.stateTimer <= 0) {
           this.pickTarget();
           this.moveState = MoveState.CHARGING;
           this.stateTimer = this.CHARGE_DURATION;
         }
         break;
+
+      case MoveState.GUARDING:
+          // Scan for intruders
+          const intruder = this.findIntruder();
+          if (intruder) {
+              this.moveState = MoveState.CHASING_ENEMY;
+              this.moveTarget = new Phaser.Math.Vector2(intruder.x, intruder.y);
+              break;
+          }
+
+          // Patrol behavior (small movements around hoard)
+          if (this.stateTimer <= 0) {
+              // Pick a point near hoard
+              if (this.hoardLocation) {
+                  const angle = Math.random() * Math.PI * 2;
+                  const dist = Math.random() * 80;
+                  this.moveTarget = new Phaser.Math.Vector2(
+                      this.hoardLocation.x + Math.cos(angle) * dist,
+                      this.hoardLocation.y + Math.sin(angle) * dist
+                  );
+                  // We switch to charging to move there, but we need to remember we are guarding.
+                  // For simplicity, let's just use CHARGING and rely on the IDLE -> GUARDING transition when we stop.
+                  this.moveState = MoveState.CHARGING;
+                  this.stateTimer = this.CHARGE_DURATION;
+              } else {
+                  this.setIdle();
+              }
+          }
+          break;
+
+      case MoveState.CHASING_ENEMY:
+          // Chase logic
+           const enemy = this.findIntruder();
+           if (enemy) {
+               this.moveTarget = new Phaser.Math.Vector2(enemy.x, enemy.y);
+               const angle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
+               this.facingAngle = angle;
+
+               if (this.stateTimer <= 0) {
+                   this.burst();
+                   this.stateTimer = this.CHARGE_DURATION;
+               }
+           } else {
+               // Enemy lost or gone
+               this.setIdle();
+           }
+           break;
+
+      case MoveState.FLEEING:
+           if (this.stateTimer <= 0) {
+               this.setIdle();
+           } else {
+               // Continue fleeing
+               if (this.moveTarget) {
+                    const angle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
+                    this.facingAngle = angle;
+
+                    // Simple movement towards safety
+                    const body = this.body as Phaser.Physics.Arcade.Body;
+                    const fleeSpeed = 200 + (this.speed * 10);
+                    this.scene.physics.velocityFromRotation(angle, fleeSpeed, body.velocity);
+               }
+           }
+           break;
 
       case MoveState.SEEKING_MATE:
         // Try to find a mate who is also seeking and not locked
@@ -317,6 +427,27 @@ export default class Bean extends Phaser.GameObjects.Container {
           this.stateTimer = this.CHARGE_DURATION;
         }
         break;
+
+      case MoveState.HAULING_FOOD:
+          if (!this.hoardLocation) {
+              this.setIdle();
+              break;
+          }
+          // Move to hoard
+          this.moveTarget = new Phaser.Math.Vector2(this.hoardLocation.x, this.hoardLocation.y);
+          const distToHoard = Phaser.Math.Distance.Between(this.x, this.y, this.hoardLocation.x, this.hoardLocation.y);
+
+          if (distToHoard < 30) {
+              this.dropFood();
+          } else {
+             const angle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
+             this.facingAngle = angle;
+             if (this.stateTimer <= 0) {
+                 this.burst();
+                 this.stateTimer = this.CHARGE_DURATION;
+             }
+          }
+          break;
 
       case MoveState.MOVING_TO_PARTNER:
           // Check if partner is still valid
@@ -374,6 +505,9 @@ export default class Bean extends Phaser.GameObjects.Container {
 
       case MoveState.BURSTING:
         // Transition immediately to Decelerating after frame 1 (velocity applied)
+        // Store current state as previous (wait, current is BURSTING, previous was CHARGING etc)
+        // We need to have stored 'previousState' BEFORE switching to bursting or charging.
+        // Actually, let's just store the intended state when we start charging/bursting.
         this.moveState = MoveState.DECELERATING;
         break;
 
@@ -387,8 +521,19 @@ export default class Bean extends Phaser.GameObjects.Container {
         if (this.moveTarget && dist > 100 && body.speed < 150) {
             if (this.lockedPartner) {
                  this.moveState = MoveState.MOVING_TO_PARTNER;
+            } else if (this.isSeekingMate) {
+                 this.moveState = MoveState.SEEKING_MATE;
+            } else if (this.previousState === MoveState.HAULING_FOOD) {
+                 this.moveState = MoveState.HAULING_FOOD;
+                 this.stateTimer = this.CHARGE_DURATION;
+            } else if (this.previousState === MoveState.CHASING_ENEMY) {
+                 this.moveState = MoveState.CHASING_ENEMY;
+                 this.stateTimer = this.CHARGE_DURATION;
+            } else if (this.previousState === MoveState.GUARDING) {
+                 this.moveState = MoveState.GUARDING;
+                 this.stateTimer = 2000;
             } else {
-                 this.moveState = this.isSeekingMate ? MoveState.SEEKING_MATE : MoveState.CHARGING;
+                 this.moveState = MoveState.CHARGING;
             }
             this.stateTimer = this.CHARGE_DURATION;
         } else if (body.speed < 10) {
@@ -400,6 +545,18 @@ export default class Bean extends Phaser.GameObjects.Container {
            } else if (this.isSeekingMate) {
                this.moveState = MoveState.SEEKING_MATE;
                this.stateTimer = 0;
+           } else if (this.previousState === MoveState.HAULING_FOOD) {
+               this.moveState = MoveState.HAULING_FOOD;
+               // Check if arrived
+               const d = this.hoardLocation ? Phaser.Math.Distance.Between(this.x, this.y, this.hoardLocation.x, this.hoardLocation.y) : 999;
+               if (d < 30) this.dropFood();
+               else this.stateTimer = 0;
+           } else if (this.previousState === MoveState.CHASING_ENEMY) {
+               this.moveState = MoveState.CHASING_ENEMY;
+               this.stateTimer = 0;
+           } else if (this.previousState === MoveState.GUARDING) {
+                this.moveState = MoveState.GUARDING;
+                this.stateTimer = 2000;
            } else {
                this.setIdle();
            }
@@ -506,6 +663,30 @@ export default class Bean extends Phaser.GameObjects.Container {
     return separationForce;
   }
 
+  private findIntruder(): Bean | null {
+      const scene = this.scene as unknown as GameScene;
+      const beans = scene.getBeans();
+
+      // Look for nearest bean that is NOT self
+      // Ideally should check for family, but for now just "other"
+      let closestDist = this.GUARD_VISION_RADIUS;
+      let target: Bean | null = null;
+
+      for (const other of beans) {
+          if (other === this) continue;
+
+          // Don't attack partner
+          if (other === this.lockedPartner) continue;
+
+          const dist = Phaser.Math.Distance.Between(this.x, this.y, other.x, other.y);
+          if (dist < closestDist) {
+              closestDist = dist;
+              target = other;
+          }
+      }
+      return target;
+  }
+
   private findClosestMate(): Bean | null {
       const scene = this.scene as unknown as GameScene;
       const beans = scene.getBeans();
@@ -563,6 +744,36 @@ export default class Bean extends Phaser.GameObjects.Container {
   }
 
   public eat(food: Food) {
+      const scene = this.scene as unknown as GameScene;
+
+      // Hoarding Logic: If satiety > 90%, store food instead of eating
+      if (this.satiety > 90) {
+          this.carriedFoodData = {
+              satiety: food.satiety,
+              attributeBonus: food.attributeBonus
+          };
+
+          // Destroy the food object from the world
+          scene.removeFood(food);
+
+          // Transition to Hauling
+          this.moveState = MoveState.HAULING_FOOD;
+
+          // Establish Hoard Location if not set
+          if (!this.hoardLocation) {
+              // Hoard at current location or food location?
+              // Prompt says: "If hoardLocation is null, set it to current position or food position."
+              // Let's set it to where we found the first extra food.
+              this.hoardLocation = new Phaser.Math.Vector2(this.x, this.y);
+          }
+
+          this.moveTarget = new Phaser.Math.Vector2(this.hoardLocation.x, this.hoardLocation.y);
+          const targetAngle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
+          this.facingAngle = targetAngle;
+
+          return;
+      }
+
       if (this.isFull) return;
       this.satiety += food.satiety;
 
@@ -583,8 +794,30 @@ export default class Bean extends Phaser.GameObjects.Container {
           }
       }
 
-      const scene = this.scene as unknown as GameScene;
       scene.removeFood(food);
+  }
+
+  private dropFood() {
+      if (!this.hoardLocation || !this.carriedFoodData) return;
+
+      const scene = this.scene as unknown as GameScene;
+      // We need a method to spawn specific food in GameScene.
+      // Assuming createFood(x, y, satiety, bonus) exists or similar.
+      // Since spawnFood creates random food, we will rely on a new method later.
+      // For now, let's use a cast to any or assume we will implement 'dropFoodItem'.
+      // Wait, I haven't implemented dropFoodItem in Scene yet.
+      // I will assume the method name `dropFood` exists on GameScene.
+      if (typeof (scene as any).dropFood === 'function') {
+          (scene as any).dropFood(
+              this.hoardLocation.x,
+              this.hoardLocation.y,
+              this.carriedFoodData.satiety,
+              this.carriedFoodData.attributeBonus
+          );
+      }
+
+      this.carriedFoodData = null;
+      this.setIdle();
   }
 
   private burst() {
@@ -598,6 +831,8 @@ export default class Bean extends Phaser.GameObjects.Container {
 
     this.scene.physics.velocityFromRotation(angle, burstSpeed, body.velocity);
     this.playMoveSound();
+    // Record previous state before switching to Bursting -> Decelerating
+    this.previousState = this.moveState;
     this.moveState = MoveState.BURSTING;
   }
 
@@ -692,6 +927,20 @@ export default class Bean extends Phaser.GameObjects.Container {
     if (this.lockedPartner || (this.moveState === MoveState.SEEKING_MATE && this.isSeekingMate)) {
          this.bodyGraphics.fillStyle(0xff69b4, 1); // Hot pink
          this.bodyGraphics.fillCircle(0, -headRadius - 5, 3);
+    }
+
+    // Draw carried food lump
+    if (this.carriedFoodData) {
+        // Draw a small lump on the back (opposite to facing angle?)
+        // Actually just draw it on the body somewhere.
+        // Let's draw it as a colored circle on top.
+        let color = 0xffffff;
+        if (this.carriedFoodData.satiety === 1) color = 0x81C784;
+        else if (this.carriedFoodData.satiety === 2) color = 0xFFD54F;
+        else if (this.carriedFoodData.satiety === 5) color = 0xE57373;
+
+        this.bodyGraphics.fillStyle(color, 1);
+        this.bodyGraphics.fillCircle(headRadius * 0.5, -headRadius * 0.5, headRadius * 0.4);
     }
 
     const indicatorSize = 3;

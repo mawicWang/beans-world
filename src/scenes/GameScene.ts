@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import Bean from '../objects/Bean';
+import Bean, { MoveState } from '../objects/Bean';
 import Food from '../objects/Food';
 import Cocoon from '../objects/Cocoon';
 
@@ -246,6 +246,14 @@ export default class GameScene extends Phaser.Scene {
           bonus = { type, value: 0.5 };
       }
 
+      this.createFood(x, y, satiety, bonus);
+  }
+
+  public dropFood(x: number, y: number, satiety: number, bonus?: { type: 'strength' | 'speed' | 'constitution', value: number }) {
+      this.createFood(x, y, satiety, bonus);
+  }
+
+  private createFood(x: number, y: number, satiety: number, bonus?: { type: 'strength' | 'speed' | 'constitution', value: number }) {
       const food = new Food(this, x, y, satiety, bonus);
       this.add.existing(food);
       this.foods.push(food);
@@ -294,7 +302,126 @@ export default class GameScene extends Phaser.Scene {
         return false;
     }
 
+    // Combat Logic
+    this.handleCombat(b1, b2);
+
     return true; // Default physics behavior (collide/bounce)
+  }
+
+  private handleCombat(b1: Bean, b2: Bean) {
+      // Check if one is a guard and the other is an intruder
+      let guard: Bean | null = null;
+      let intruder: Bean | null = null;
+
+      // Identify roles
+      const isB1Guard = b1.moveState === MoveState.GUARDING || b1.moveState === MoveState.CHASING_ENEMY;
+      const isB2Guard = b2.moveState === MoveState.GUARDING || b2.moveState === MoveState.CHASING_ENEMY;
+
+      if (isB1Guard && !isB2Guard) {
+          guard = b1;
+          intruder = b2;
+      } else if (isB2Guard && !isB1Guard) {
+          guard = b2;
+          intruder = b1;
+      } else if (isB1Guard && isB2Guard) {
+          // Both are guards (maybe different families/hoards? For now they fight too)
+          guard = b1;
+          intruder = b2;
+      }
+
+      if (guard && intruder) {
+          // Check "family" (skip for now as we don't have family ID, assume everyone else is enemy)
+          if (guard.lockedPartner === intruder) return;
+
+          // Apply Damage (Satiety loss)
+          // Base damage 5, scaled by strength difference?
+          // Instructions: "satiety -= 5. Strength higher -> more loss."
+          const baseDmg = 5;
+
+          // Guard hits Intruder
+          const dmgToIntruder = baseDmg + Math.max(0, guard.strength - intruder.strength);
+          intruder.satiety -= dmgToIntruder;
+
+          // Intruder hits Guard (self defense?)
+          const dmgToGuard = baseDmg + Math.max(0, intruder.strength - guard.strength);
+          guard.satiety -= dmgToGuard;
+
+          // VFX & SFX
+          this.createCollisionParticles((b1.x + b2.x) / 2, (b1.y + b2.y) / 2);
+          this.playCombatSound();
+
+          // Check Fleeing
+          if (intruder.satiety < 20) {
+              intruder.fleeFrom(guard);
+              // Thief Amnesia (handled in fleeFrom logic implicitly by setting target away?
+              // Prompt says: "If thief flees, set moveTarget = null if targeting food".
+              // fleeFrom sets moveTarget to run away, so that overrides food target.)
+          }
+
+          if (guard.satiety < 20) {
+               guard.fleeFrom(intruder);
+               // Guard abandonment (handled by changing state to FLEEING, need to clear hoardLocation?)
+               // Prompt: "If guard flees, abandon hoardLocation = null"
+               // We can't access private property directly easily without a method or public access.
+               // Let's assume we can cast or add method.
+               // Or better, let's add `abandonHoard()` to Bean.
+               // Since I can't modify Bean right now easily without another step (I just did),
+               // I will check if I exposed hoardLocation. I made it private.
+               // I should have added abandonHoard.
+               // I will cast to any to clear it for now, or assume fleeFrom handles it?
+               // No fleeFrom is generic.
+               (guard as any).hoardLocation = null;
+          }
+      }
+  }
+
+  private createCollisionParticles(x: number, y: number) {
+       // Create a temporary texture for particle if not exists?
+       if (!this.textures.exists('particle_dot')) {
+           const graphics = this.make.graphics({ x: 0, y: 0 });
+           graphics.fillStyle(0xffffff);
+           graphics.fillCircle(4, 4, 4);
+           graphics.generateTexture('particle_dot', 8, 8);
+       }
+
+       const emitter = this.add.particles(x, y, 'particle_dot', {
+            speed: { min: 50, max: 150 },
+            scale: { start: 0.5, end: 0 },
+            lifespan: 300,
+            blendMode: 'ADD',
+            emitting: false
+       });
+       emitter.explode(10);
+
+       // Clean up emitter?
+       this.time.delayedCall(1000, () => {
+           emitter.destroy();
+       });
+  }
+
+  private playCombatSound() {
+      // Procedural sound
+      if (this.sound instanceof Phaser.Sound.WebAudioSoundManager) {
+          const ctx = this.sound.context;
+          if (ctx.state === 'suspended') return;
+
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+
+          osc.type = 'square';
+          const now = ctx.currentTime;
+          osc.frequency.setValueAtTime(150, now);
+          osc.frequency.exponentialRampToValueAtTime(40, now + 0.1);
+
+          gain.gain.setValueAtTime(0.2, now);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+
+          osc.start();
+          osc.stop(now + 0.1);
+      }
   }
 
   private checkReproductionOverlap(bean1: Bean, bean2: Bean) {
