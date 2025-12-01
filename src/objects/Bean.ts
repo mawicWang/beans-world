@@ -116,6 +116,14 @@ export default class Bean extends Phaser.GameObjects.Container {
     this.moveTarget = null;
   }
 
+  private pickRandomTarget() {
+    const scene = this.scene as unknown as GameScene;
+    const padding = 50;
+    const tx = Phaser.Math.Between(padding, scene.scale.width - padding);
+    const ty = Phaser.Math.Between(padding, scene.scale.height - padding);
+    this.moveTarget = new Phaser.Math.Vector2(tx, ty);
+  }
+
   update(time: number, delta: number) {
     const body = this.body as Phaser.Physics.Arcade.Body;
     if (!body) return; // Safety check in case update is called before physics setup
@@ -185,16 +193,24 @@ export default class Bean extends Phaser.GameObjects.Container {
 
       case MoveState.SEEKING_MATE:
         // Continuously update target to nearest mate
-        this.pickMateTarget();
-        // Move towards it like CHARGING but maybe sustained?
-        // Reuse Charging logic for movement
-        if (this.moveTarget) {
+        const mate = this.findClosestMate();
+
+        if (mate) {
+             this.moveTarget = new Phaser.Math.Vector2(mate.x, mate.y);
              const targetAngle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
              this.facingAngle = targetAngle;
              // Don't separate from other beans too much if we want to merge!
         } else {
-             // No mate found, go back to idle
-             this.setIdle();
+             // No mate found, look around randomly
+             if (!this.moveTarget || (this.moveTarget && this.hasReachedTarget())) {
+                 this.pickRandomTarget();
+             }
+
+             // Face the random target
+             if (this.moveTarget) {
+                 const targetAngle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
+                 this.facingAngle = targetAngle;
+             }
         }
 
         // Burst periodically
@@ -355,7 +371,7 @@ export default class Bean extends Phaser.GameObjects.Container {
     return separationForce;
   }
 
-  private pickMateTarget() {
+  private findClosestMate(): Bean | null {
       const scene = this.scene as unknown as GameScene;
       const beans = scene.getBeans();
       let closestDist = Infinity;
@@ -371,13 +387,13 @@ export default class Bean extends Phaser.GameObjects.Container {
               target = other;
           }
       }
+      return target;
+  }
 
-      if (target) {
-          this.moveTarget = new Phaser.Math.Vector2(target.x, target.y);
-      } else {
-          // If no mate found, maybe drift randomly or stay put
-          this.moveTarget = null;
-      }
+  private hasReachedTarget(): boolean {
+      if (!this.moveTarget) return true;
+      const dist = Phaser.Math.Distance.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
+      return dist < 20; // Tolerance for reaching target
   }
 
   private pickTarget() {
@@ -405,11 +421,7 @@ export default class Bean extends Phaser.GameObjects.Container {
         const food = foodTarget as Food;
         this.moveTarget = new Phaser.Math.Vector2(food.x, food.y);
     } else {
-        // Random
-        const padding = 50;
-        const tx = Phaser.Math.Between(padding, scene.scale.width - padding);
-        const ty = Phaser.Math.Between(padding, scene.scale.height - padding);
-        this.moveTarget = new Phaser.Math.Vector2(tx, ty);
+        this.pickRandomTarget();
     }
   }
 
