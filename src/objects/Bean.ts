@@ -55,7 +55,7 @@ export default class Bean extends Phaser.GameObjects.Container {
   private currentRadius = 15;
   private mainColor: number;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, startSatiety: number = 80, startAdult: boolean = true) {
+  constructor(scene: Phaser.Scene, x: number, y: number, startSatiety: number = 80, startAdult: boolean = true, showStats: boolean = false) {
     super(scene, x, y);
 
     this.satiety = startSatiety;
@@ -74,7 +74,7 @@ export default class Bean extends Phaser.GameObjects.Container {
     const panelBg = scene.add.rectangle(0, 0, 50, 20, 0x000000, 0.5);
     this.statusText = scene.add.text(0, 0, '80', { fontSize: '12px', color: '#fff' }).setOrigin(0.5);
     this.statusPanel.add([panelBg, this.statusText]);
-    this.statusPanel.setVisible(false);
+    this.statusPanel.setVisible(showStats);
     this.add(this.statusPanel);
 
     // Listen for toggle event

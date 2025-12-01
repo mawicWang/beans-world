@@ -13,6 +13,7 @@ export default class GameScene extends Phaser.Scene {
   private isPaused: boolean = false;
   private currentSpeed: number = 1;
   private simTime: number = 0;
+  private areStatsVisible: boolean = false;
 
   // Manual Timer for Food Spawning (since we don't rely on Phaser's TimeScale for this anymore)
   private foodTimer: number = 0;
@@ -75,6 +76,13 @@ export default class GameScene extends Phaser.Scene {
       this.spawnBean();
     });
 
+    // Listen for Stats Toggle
+    this.game.events.on('TOGGLE_BEAN_STATS', (visible: boolean) => {
+        this.areStatsVisible = visible;
+        // The individual beans also listen to this event to toggle themselves,
+        // so we just need to track the state for new beans.
+    });
+
     // Listen for Pause Toggle
     this.game.events.on('TOGGLE_PAUSE', (isPaused: boolean) => {
         this.isPaused = isPaused;
@@ -130,7 +138,7 @@ export default class GameScene extends Phaser.Scene {
   spawnBean(x?: number, y?: number, startSatiety: number = 80, isAdult: boolean = true) {
     const spawnX = x ?? Phaser.Math.Between(50, this.scale.width - 50);
     const spawnY = y ?? Phaser.Math.Between(50, this.scale.height - 50);
-    const bean = new Bean(this, spawnX, spawnY, startSatiety, isAdult);
+    const bean = new Bean(this, spawnX, spawnY, startSatiety, isAdult, this.areStatsVisible);
     this.add.existing(bean);
     this.beans.push(bean);
     this.beanGroup.add(bean);
