@@ -1,12 +1,12 @@
 import Phaser from 'phaser';
-import GameScene from '../scenes/GameScene';
 
 export default class Cocoon extends Phaser.GameObjects.Container {
   private totalSatiety: number;
-  private readonly HATCH_DURATION = 3000; // 3 seconds
+  private readonly HATCH_DELAY = 2000; // Time to wait AFTER growth finishes
+  private readonly GROWTH_DURATION = 4000;
   private bodyGraphics: Phaser.GameObjects.Graphics;
   private mainColor: number;
-  private cocoonRadius: number = 25; // "Slightly larger" (Bean is 15)
+  private baseRadius: number = 13; // Slightly smaller than Adult Bean (15)
 
   constructor(scene: Phaser.Scene, x: number, y: number, totalSatiety: number, color1: number, color2: number) {
     super(scene, x, y);
@@ -26,58 +26,93 @@ export default class Cocoon extends Phaser.GameObjects.Container {
 
     this.drawCocoon();
 
-    // Add a gentle breathing animation
-    scene.tweens.add({
-        targets: this,
-        scaleX: 1.05,
-        scaleY: 1.05,
-        duration: 800,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut'
-    });
-
-    // Schedule hatch using scene time (respects time scale)
-    scene.time.delayedCall(this.HATCH_DURATION, () => {
-        this.hatch();
-    });
+    // Start Animation Sequence
+    this.startAnimations();
   }
 
   private drawCocoon() {
     this.bodyGraphics.clear();
     // Fill
     this.bodyGraphics.fillStyle(this.mainColor, 1);
-    this.bodyGraphics.fillCircle(0, 0, this.cocoonRadius);
+    this.bodyGraphics.fillCircle(0, 0, this.baseRadius);
 
     // Border
-    this.bodyGraphics.lineStyle(3, 0xffffff, 0.8);
-    this.bodyGraphics.strokeCircle(0, 0, this.cocoonRadius);
+    this.bodyGraphics.lineStyle(2, 0xffffff, 0.8);
+    this.bodyGraphics.strokeCircle(0, 0, this.baseRadius);
+  }
 
-    // "No eyes" - explicitly just the circle shape.
+  private startAnimations() {
+      // 1. Initial Pop-in (Rapid merge effect)
+      this.setScale(0.1);
+      this.scene.tweens.add({
+          targets: this,
+          scaleX: 1,
+          scaleY: 1,
+          duration: 300,
+          ease: 'Back.easeOut',
+          onComplete: () => {
+              this.startPulseAndGrow();
+          }
+      });
+  }
+
+  private startPulseAndGrow() {
+      // 2. Heartbeat Pulse (On the Graphics object, relative to Container)
+      // Heartbeat pattern: Pump-pump... Pump-pump...
+      // We can use a complex tween or just a simple sine wave
+      this.scene.tweens.add({
+          targets: this.bodyGraphics,
+          scaleX: 1.1,
+          scaleY: 1.1,
+          duration: 400, // 0.4s expansion
+          yoyo: true,
+          repeat: -1,
+          ease: 'Sine.easeInOut' // Smooth throb
+      });
+
+      // 3. Growth (On the Container)
+      // Target is 1.5x Adult size.
+      // Adult is 15. Base is 13.
+      // 1.5 * 15 = 22.5.
+      // 22.5 / 13 ~= 1.73
+      const targetScale = 1.7;
+
+      this.scene.tweens.add({
+          targets: this,
+          scaleX: targetScale,
+          scaleY: targetScale,
+          duration: this.GROWTH_DURATION,
+          ease: 'Sine.easeInOut',
+          onComplete: () => {
+              // 4. Wait then Hatch
+              this.scene.time.delayedCall(this.HATCH_DELAY, () => {
+                  this.hatch();
+              });
+          }
+      });
   }
 
   private hatch() {
-    // Safety check to prevent double hatching
     if (!this.active) return;
 
-    const scene = this.scene as unknown as GameScene;
+    const scene = this.scene as any;
 
     // "Split into several slightly smaller individuals"
     // Let's randomize between 2 and 4
     const offspringCount = Phaser.Math.Between(2, 4);
-
-    // "Both parties' satiety is evenly distributed"
     const satietyPerChild = this.totalSatiety / offspringCount;
 
     for (let i = 0; i < offspringCount; i++) {
         // Spawn with slight offset to avoid immediate overlap issues
         const angle = (Math.PI * 2 * i) / offspringCount;
-        const offset = 10;
+        const offset = 10 * this.scaleX; // Scale offset by cocoon size
         const spawnX = this.x + Math.cos(angle) * offset;
         const spawnY = this.y + Math.sin(angle) * offset;
 
         // Spawn child: isAdult = false
-        scene.spawnBean(spawnX, spawnY, satietyPerChild, false);
+        if (scene.spawnBean) {
+            scene.spawnBean(spawnX, spawnY, satietyPerChild, false);
+        }
     }
 
     this.destroy();
