@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import Bean, { MoveState } from '../objects/Bean';
+import Bean from '../objects/Bean';
 import Food from '../objects/Food';
 import Cocoon from '../objects/Cocoon';
 
