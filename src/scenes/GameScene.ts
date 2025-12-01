@@ -85,7 +85,8 @@ export default class GameScene extends Phaser.Scene {
         // Apply speed settings
         // Note: In Phaser 3 Arcade Physics, timeScale scales the delta time step.
         // A value of 2 means delta * 2, so physics runs 2x faster.
-        this.physics.world.timeScale = speed;
+        // Wait, actually for physics.world.timeScale, 0.5 is double speed, 2.0 is half speed.
+        this.physics.world.timeScale = 1.0 / speed;
         this.time.timeScale = speed;
         this.tweens.timeScale = speed;
     });
