@@ -159,7 +159,7 @@ export default class Bean extends Phaser.GameObjects.Container {
       });
   }
 
-  update(_time: number, delta: number) {
+  update(_time: number, delta: number, render: boolean = true) {
     const body = this.body as Phaser.Physics.Arcade.Body;
     if (!body) return; // Safety check in case update is called before physics setup
 
@@ -328,6 +328,11 @@ export default class Bean extends Phaser.GameObjects.Container {
     }
 
     // 2. Tail Physics (Elastic Rope System)
+    // We need to use delta for time-correction.
+    // Assuming the original stiffness/damping were tuned for 60fps (16.6ms),
+    // we normalize delta to "frames".
+    const dt = delta / 16.66; // 1.0 at 60fps
+
     // Head position (World)
     const headX = this.x;
     const headY = this.y;
@@ -357,26 +362,29 @@ export default class Bean extends Phaser.GameObjects.Container {
          }
     }
 
-    // Update velocity
-    this.tailVelocity.x += ax;
-    this.tailVelocity.y += ay;
+    // Update velocity (Acceleration * dt)
+    this.tailVelocity.x += ax * dt;
+    this.tailVelocity.y += ay * dt;
 
-    // Damping
-    this.tailVelocity.x *= this.SPRING_DAMPING;
-    this.tailVelocity.y *= this.SPRING_DAMPING;
+    // Damping (applied per frame, so we power it by dt)
+    // v *= damping^dt
+    this.tailVelocity.x *= Math.pow(this.SPRING_DAMPING, dt);
+    this.tailVelocity.y *= Math.pow(this.SPRING_DAMPING, dt);
 
-    // Update position
-    this.tailPos.x += this.tailVelocity.x;
-    this.tailPos.y += this.tailVelocity.y;
+    // Update position (Velocity * dt)
+    this.tailPos.x += this.tailVelocity.x * dt;
+    this.tailPos.y += this.tailVelocity.y * dt;
 
     // 3. Render
-    // Convert World Tail to Local Tail relative to Container
-    // This allows us to draw using local coordinates where (0,0) is always the Head
-    // Since the container is NOT rotated, this is just a translation.
-    const localTail = new Phaser.Math.Vector2();
-    this.getLocalPoint(this.tailPos.x, this.tailPos.y, localTail);
+    if (render) {
+        // Convert World Tail to Local Tail relative to Container
+        // This allows us to draw using local coordinates where (0,0) is always the Head
+        // Since the container is NOT rotated, this is just a translation.
+        const localTail = new Phaser.Math.Vector2();
+        this.getLocalPoint(this.tailPos.x, this.tailPos.y, localTail);
 
-    this.drawJelly(localTail);
+        this.drawJelly(localTail);
+    }
   }
 
   private getSeparationVector(): Phaser.Math.Vector2 {
