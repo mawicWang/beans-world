@@ -20,7 +20,6 @@ export default class GameScene extends Phaser.Scene {
   create() {
     // Create physics group for beans
     this.beanGroup = this.physics.add.group();
-    this.physics.add.collider(this.beanGroup, this.beanGroup);
 
     // Create physics group for food
     this.foodGroup = this.physics.add.group();
@@ -32,12 +31,11 @@ export default class GameScene extends Phaser.Scene {
         bean.eat(food);
     });
 
-    // Collider for physical separation
-    this.physics.add.collider(this.beanGroup, this.beanGroup);
-
-    // Overlap for Reproduction Trigger (avoids physics solver interference)
-    this.physics.add.overlap(this.beanGroup, this.beanGroup, (obj1, obj2) => {
-        this.checkReproductionOverlap(obj1 as Bean, obj2 as Bean);
+    // Collider for physical separation AND reproduction trigger
+    // Using processCallback to handle merge logic.
+    // If they merge, we return false to skip physical collision response.
+    this.physics.add.collider(this.beanGroup, this.beanGroup, undefined, (obj1, obj2) => {
+         return this.checkReproductionOverlap(obj1 as Bean, obj2 as Bean);
     });
 
     // Draw visual bounds
@@ -83,9 +81,6 @@ export default class GameScene extends Phaser.Scene {
     this.game.events.on('SET_GAME_SPEED', (speed: number) => {
         this.currentSpeed = speed;
         // Apply speed settings
-        // Note: In Phaser 3 Arcade Physics, timeScale scales the delta time step.
-        // A value of 2 means delta * 2, so physics runs 2x faster.
-        // Wait, actually for physics.world.timeScale, 0.5 is double speed, 2.0 is half speed.
         this.physics.world.timeScale = 1.0 / speed;
         this.time.timeScale = speed;
         this.tweens.timeScale = speed;
@@ -101,21 +96,16 @@ export default class GameScene extends Phaser.Scene {
   }
 
   handleInput(pointer: Phaser.Input.Pointer) {
-    // Unlock audio context if it's suspended (common on mobile)
     if (this.sound instanceof Phaser.Sound.WebAudioSoundManager) {
       if (this.sound.context.state === 'suspended') {
         this.sound.context.resume();
       }
     }
 
-    // Ignore clicks on the UI area (Top-Right corner where buttons are)
-    // Buttons are around width-80, width 120 (so width-140 to width-20)
-    // Y extends down to ~200
     if (pointer.x > this.scale.width - 150 && pointer.y < 200) {
         return;
     }
 
-    // Spawn a bean at touch location
     this.spawnBean(pointer.x, pointer.y);
   }
 
@@ -128,7 +118,6 @@ export default class GameScene extends Phaser.Scene {
     this.beanGroup.add(bean);
     bean.setupPhysics();
 
-    // Notify UI of new count via registry
     this.registry.set('beanCount', this.beans.length);
     this.game.events.emit('UPDATE_BEAN_COUNT', this.beans.length);
   }
@@ -142,18 +131,11 @@ export default class GameScene extends Phaser.Scene {
   update(_time: number, delta: number) {
     if (this.isPaused) return;
 
-    // Scale delta for custom logic (age, satiety)
-    // We use this.currentSpeed because Phaser core delta is real-time (unscaled)
     const scaledDelta = delta * this.currentSpeed;
-
-    // Use this.time.now for consistency with scaled time (timers)
-    // this.time.now is automatically scaled by this.time.timeScale
     const scaledTime = this.time.now;
 
-    // Update simulation time in registry for UI
     this.registry.set('simTime', scaledTime);
 
-    // Iterate backwards to safely handle removals during update
     for (let i = this.beans.length - 1; i >= 0; i--) {
         this.beans[i].update(scaledTime, scaledDelta);
     }
@@ -205,21 +187,19 @@ export default class GameScene extends Phaser.Scene {
       this.game.events.emit('UPDATE_BEAN_COUNT', this.beans.length);
   }
 
-  private checkReproductionOverlap(bean1: Bean, bean2: Bean) {
+  private checkReproductionOverlap(bean1: Bean, bean2: Bean): boolean {
       // Check if both are seeking mate
-      // Note: Overlap runs every frame they touch, so we need to be careful to only trigger once.
-      // Checking 'active' is the key.
       if (bean1.active && bean2.active &&
           bean1.moveState === MoveState.SEEKING_MATE &&
           bean2.moveState === MoveState.SEEKING_MATE) {
 
-          console.log(`Reproduction triggered between beans at ${bean1.x},${bean1.y}`);
           this.startReproduction(bean1, bean2);
+          return false; // Stop physics separation
       }
+      return true; // Continue physics separation
   }
 
   private startReproduction(parent1: Bean, parent2: Bean) {
-      console.log("Starting reproduction logic execution...");
       // Calculate mid point
       const midX = (parent1.x + parent2.x) / 2;
       const midY = (parent1.y + parent2.y) / 2;
@@ -240,13 +220,10 @@ export default class GameScene extends Phaser.Scene {
   private drawBounds(width: number, height: number) {
     if (!this.boundsGraphics) {
       this.boundsGraphics = this.add.graphics();
-      // Ensure it's drawn below beans but above background
       this.boundsGraphics.setDepth(-1);
     }
     this.boundsGraphics.clear();
 
-    // Draw a border around the screen
-    // Inset by half line width (2px) so the 4px stroke is fully within bounds
     this.boundsGraphics.lineStyle(4, 0x666666);
     this.boundsGraphics.strokeRect(2, 2, width - 4, height - 4);
   }

@@ -5,8 +5,8 @@ export default class Cocoon extends Phaser.GameObjects.Container {
   private totalSatiety: number;
   private duration: number;
   private bodyGraphics: Phaser.GameObjects.Graphics;
-  private mainColor: number = 0x888888; // Default gray, will override
-  private originalRadius: number = 25; // Slightly larger than a bean
+  private mainColor: number;
+  private originalRadius: number = 30; // Larger than bean (15)
 
   constructor(scene: Phaser.Scene, x: number, y: number, totalSatiety: number, color1: number, color2: number) {
     super(scene, x, y);
@@ -27,12 +27,12 @@ export default class Cocoon extends Phaser.GameObjects.Container {
 
     this.drawCocoon();
 
-    // Add pulsing tween
+    // Add pulsing tween (heartbeat)
     scene.tweens.add({
         targets: this,
-        scaleX: 1.1,
-        scaleY: 1.1,
-        duration: 500,
+        scaleX: 1.05,
+        scaleY: 1.05,
+        duration: 600,
         yoyo: true,
         repeat: -1,
         ease: 'Sine.easeInOut'
@@ -46,10 +46,18 @@ export default class Cocoon extends Phaser.GameObjects.Container {
 
   private drawCocoon() {
     this.bodyGraphics.clear();
+
+    // Simple circle, no eyes
     this.bodyGraphics.fillStyle(this.mainColor, 1);
-    this.bodyGraphics.lineStyle(2, 0xffffff, 0.5);
+    this.bodyGraphics.lineStyle(3, 0xffffff, 0.6);
     this.bodyGraphics.fillCircle(0, 0, this.originalRadius);
     this.bodyGraphics.strokeCircle(0, 0, this.originalRadius);
+
+    // Add some spots or texture to look organic?
+    this.bodyGraphics.fillStyle(0x000000, 0.1);
+    this.bodyGraphics.fillCircle(-5, -5, 4);
+    this.bodyGraphics.fillCircle(8, 6, 3);
+    this.bodyGraphics.fillCircle(-6, 10, 2);
   }
 
   private hatch() {
@@ -57,16 +65,19 @@ export default class Cocoon extends Phaser.GameObjects.Container {
 
     const scene = this.scene as unknown as GameScene;
 
-    // Determine number of offspring (2 to 4)
-    const count = Phaser.Math.Between(2, 4);
+    // Determine number of offspring (Several: 2 to 5)
+    const count = Phaser.Math.Between(2, 5);
     const satietyPerBean = this.totalSatiety / count;
 
     for (let i = 0; i < count; i++) {
-        // Random slight offset
-        const offsetX = Phaser.Math.Between(-10, 10);
-        const offsetY = Phaser.Math.Between(-10, 10);
+        // Random slight offset so they don't stack perfectly
+        const r = 20;
+        const theta = Math.random() * Math.PI * 2;
+        const offsetX = Math.cos(theta) * r;
+        const offsetY = Math.sin(theta) * r;
 
-        // Spawn baby bean
+        // Spawn baby bean (isAdult = false)
+        // Ensure satiety is passed correctly
         scene.spawnBean(this.x + offsetX, this.y + offsetY, satietyPerBean, false);
     }
 
