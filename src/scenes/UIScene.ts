@@ -4,7 +4,15 @@ export default class UIScene extends Phaser.Scene {
   private beanCountText!: Phaser.GameObjects.Text;
   private addButtonContainer!: Phaser.GameObjects.Container;
   private toggleStatsButtonContainer!: Phaser.GameObjects.Container;
+  private speedControlsContainer!: Phaser.GameObjects.Container;
   private statsVisible: boolean = false;
+
+  private isPaused: boolean = false;
+  private speedLevel: number = 0; // 0=1x, 1=2x, 2=5x
+  private speedValues: number[] = [1, 2, 5];
+  private pauseText!: Phaser.GameObjects.Text;
+  private speedText!: Phaser.GameObjects.Text;
+  private pauseButtonBg!: Phaser.GameObjects.Rectangle; // To change color if needed
 
   constructor() {
     super('UIScene');
@@ -21,6 +29,7 @@ export default class UIScene extends Phaser.Scene {
     // Add Buttons
     this.createAddButton();
     this.createToggleStatsButton();
+    this.createSpeedControls();
 
     // Listen for updates
     this.game.events.on('UPDATE_BEAN_COUNT', (count: number) => {
@@ -91,6 +100,69 @@ export default class UIScene extends Phaser.Scene {
     this.toggleStatsButtonContainer.add([bg, text]);
   }
 
+  private createSpeedControls() {
+    this.speedControlsContainer = this.add.container(0, 0);
+
+    // Pause Button (Left)
+    // Width 55, Height 50
+    const pauseBg = this.add.rectangle(-32.5, 0, 55, 50, 0xF44336); // Red-ish for stop/control
+    this.pauseButtonBg = pauseBg;
+
+    pauseBg.setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => {
+          this.isPaused = !this.isPaused;
+          this.game.events.emit('TOGGLE_PAUSE', this.isPaused);
+          this.updatePauseVisuals();
+      })
+      .on('pointerover', () => pauseBg.setFillStyle(0xE57373))
+      .on('pointerout', () => pauseBg.setFillStyle(0xF44336));
+
+    this.pauseText = this.add.text(-32.5, 0, '||', {
+        fontSize: '20px',
+        color: '#ffffff',
+        fontStyle: 'bold'
+    }).setOrigin(0.5);
+
+    // Speed Button (Right)
+    const speedBg = this.add.rectangle(32.5, 0, 55, 50, 0xFF9800); // Orange for speed
+    speedBg.setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => {
+          this.speedLevel = (this.speedLevel + 1) % this.speedValues.length;
+          const newSpeed = this.speedValues[this.speedLevel];
+          this.game.events.emit('SET_GAME_SPEED', newSpeed);
+          this.updateSpeedVisuals();
+      })
+      .on('pointerover', () => speedBg.setFillStyle(0xFFB74D))
+      .on('pointerout', () => speedBg.setFillStyle(0xFF9800));
+
+    this.speedText = this.add.text(32.5, 0, '>', {
+        fontSize: '24px',
+        color: '#ffffff',
+        fontStyle: 'bold'
+    }).setOrigin(0.5);
+
+    this.speedControlsContainer.add([pauseBg, this.pauseText, speedBg, this.speedText]);
+  }
+
+  private updatePauseVisuals() {
+      if (this.isPaused) {
+          this.pauseText.setText('▶'); // Play symbol when paused (to resume)
+          // Maybe change color to Green to indicate "Resume"?
+          // But usually toggle buttons keep their identity.
+          // Let's stick to symbol change.
+      } else {
+          this.pauseText.setText('||'); // Pause symbol when running
+      }
+  }
+
+  private updateSpeedVisuals() {
+      const speed = this.speedValues[this.speedLevel];
+      let symbol = '>';
+      if (speed === 2) symbol = '>>';
+      if (speed === 5) symbol = '>>>';
+      this.speedText.setText(symbol);
+  }
+
   resize(gameSize: Phaser.Structs.Size) {
     // Position button at top-right with some padding
     if (this.addButtonContainer) {
@@ -98,6 +170,9 @@ export default class UIScene extends Phaser.Scene {
     }
     if (this.toggleStatsButtonContainer) {
         this.toggleStatsButtonContainer.setPosition(gameSize.width - 80, 105);
+    }
+    if (this.speedControlsContainer) {
+        this.speedControlsContainer.setPosition(gameSize.width - 80, 165);
     }
   }
 }

@@ -10,6 +10,9 @@ export default class GameScene extends Phaser.Scene {
   private foodGroup!: Phaser.Physics.Arcade.Group;
   private boundsGraphics!: Phaser.GameObjects.Graphics;
 
+  private isPaused: boolean = false;
+  private currentSpeed: number = 1;
+
   constructor() {
     super('GameScene');
   }
@@ -62,6 +65,31 @@ export default class GameScene extends Phaser.Scene {
       this.spawnBean();
     });
 
+    // Listen for Pause Toggle
+    this.game.events.on('TOGGLE_PAUSE', (isPaused: boolean) => {
+        this.isPaused = isPaused;
+        if (this.isPaused) {
+            this.physics.world.pause();
+            this.time.paused = true;
+            this.tweens.pauseAll();
+        } else {
+            this.physics.world.resume();
+            this.time.paused = false;
+            this.tweens.resumeAll();
+        }
+    });
+
+    // Listen for Speed Change
+    this.game.events.on('SET_GAME_SPEED', (speed: number) => {
+        this.currentSpeed = speed;
+        // Apply speed settings
+        // Note: In Phaser 3 Arcade Physics, timeScale scales the delta time step.
+        // A value of 2 means delta * 2, so physics runs 2x faster.
+        this.physics.world.timeScale = speed;
+        this.time.timeScale = speed;
+        this.tweens.timeScale = speed;
+    });
+
     // Food Spawning Timer
     this.time.addEvent({
         delay: 3000,
@@ -77,6 +105,13 @@ export default class GameScene extends Phaser.Scene {
       if (this.sound.context.state === 'suspended') {
         this.sound.context.resume();
       }
+    }
+
+    // Ignore clicks on the UI area (Top-Right corner where buttons are)
+    // Buttons are around width-80, width 120 (so width-140 to width-20)
+    // Y extends down to ~200
+    if (pointer.x > this.scale.width - 150 && pointer.y < 200) {
+        return;
     }
 
     // Spawn a bean at touch location
@@ -104,9 +139,19 @@ export default class GameScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number) {
+    if (this.isPaused) return;
+
+    // Scale delta for custom logic (age, satiety)
+    // We use this.currentSpeed because Phaser core delta is real-time (unscaled)
+    const scaledDelta = delta * this.currentSpeed;
+
+    // Use this.time.now for consistency with scaled time (timers)
+    // this.time.now is automatically scaled by this.time.timeScale
+    const scaledTime = this.time.now;
+
     // Iterate backwards to safely handle removals during update
     for (let i = this.beans.length - 1; i >= 0; i--) {
-        this.beans[i].update(time, delta);
+        this.beans[i].update(scaledTime, scaledDelta);
     }
   }
 
