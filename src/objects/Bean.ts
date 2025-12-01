@@ -45,7 +45,8 @@ export default class Bean extends Phaser.GameObjects.Container {
   private readonly IDLE_DURATION_MAX = 2000;
 
   // Visuals
-  private baseRadius = 15; // Slightly smaller to allow growth
+  private readonly ADULT_RADIUS = 15;
+  private readonly CHILD_RADIUS = 9; // 0.6 * 15
   private currentRadius = 15;
   private mainColor: number;
 
@@ -54,7 +55,7 @@ export default class Bean extends Phaser.GameObjects.Container {
 
     this.satiety = startSatiety;
     this.isAdult = startAdult;
-    this.currentRadius = this.isAdult ? this.baseRadius : this.baseRadius * 0.6;
+    this.currentRadius = this.isAdult ? this.ADULT_RADIUS : this.CHILD_RADIUS;
 
     // Pick a jelly-like color (variations of blue/cyan/purple)
     const colors = [0x4aa3df, 0x50c8e0, 0x6e8cd4, 0x4dd0e1];
@@ -101,12 +102,19 @@ export default class Bean extends Phaser.GameObjects.Container {
     }
 
     const body = this.body as Phaser.Physics.Arcade.Body;
-    body.setCircle(this.currentRadius);
-    body.setOffset(-this.currentRadius, -this.currentRadius);
+    this.updatePhysicsBodySize();
     body.setCollideWorldBounds(true);
     // Add drag for the "Decelerate" phase
     body.setDrag(400);
     body.setBounce(0.5);
+  }
+
+  private updatePhysicsBodySize() {
+      const body = this.body as Phaser.Physics.Arcade.Body;
+      if (body) {
+          body.setCircle(this.currentRadius);
+          body.setOffset(-this.currentRadius, -this.currentRadius);
+      }
   }
 
   private setIdle() {
@@ -124,6 +132,33 @@ export default class Bean extends Phaser.GameObjects.Container {
     this.moveTarget = new Phaser.Math.Vector2(tx, ty);
   }
 
+  private growUp() {
+      this.isAdult = true;
+      // Start from current size (Child)
+
+      // Animate the growth
+      // Store initial radius for interpolation
+      const startRadius = this.currentRadius;
+      const targetRadius = this.ADULT_RADIUS;
+
+      this.scene.tweens.add({
+          targets: this,
+          duration: 1000,
+          ease: 'Sine.easeOut',
+          // We use a custom tween value
+          onUpdate: (tween) => {
+              const progress = tween.progress;
+              this.currentRadius = Phaser.Math.Interpolation.Linear([startRadius, targetRadius], progress);
+              // Note: We don't update physics body size every frame to avoid expensive re-calculations/stuck issues,
+              // but we update the visual radius.
+          },
+          onComplete: () => {
+             this.currentRadius = targetRadius;
+             this.updatePhysicsBodySize();
+          }
+      });
+  }
+
   update(_time: number, delta: number) {
     const body = this.body as Phaser.Physics.Arcade.Body;
     if (!body) return; // Safety check in case update is called before physics setup
@@ -132,10 +167,7 @@ export default class Bean extends Phaser.GameObjects.Container {
     if (!this.isAdult) {
         this.age += delta;
         if (this.age >= this.MATURITY_AGE) {
-            this.isAdult = true;
-            this.currentRadius = this.baseRadius;
-            body.setCircle(this.currentRadius);
-            body.setOffset(-this.currentRadius, -this.currentRadius);
+            this.growUp();
         }
     }
 
@@ -163,13 +195,32 @@ export default class Bean extends Phaser.GameObjects.Container {
     // Reproduction Trigger Check (Only if Adult, Idle, and High Satiety)
     if (this.isAdult && this.satiety > 60 && this.reproCooldown <= 0 && this.moveState === MoveState.IDLE) {
          // Probability check based on satiety
-         // Max satiety 100 -> 40 points above 60.
-         // Let's say at 100 satiety, 5% chance per second?
-         // At 60fps, delta is ~16ms.
-         // Let's do a simple random check.
-         // 0.0001 per frame * 60 = 0.6% per second.
-         // Let's try 0.001 -> 6% per second.
-         if (Math.random() < ((this.satiety - 60) * 0.001)) {
+         // "The higher the satiety, the more likely to enter the state"
+         // Let's use a quadratic curve for probability per second.
+         // (satiety - 60) ranges from 0 to 40.
+         // (40^2) = 1600.
+         // Max chance at 100 satiety? Let's say 10% per second?
+         // 0.1 / 60fps = 0.0016 per frame.
+         // k * 1600 = 0.0016 => k = 0.000001
+
+         // Probability check based on satiety
+         // "The higher the satiety, the more likely to enter the state"
+         // Base chance calculated per SECOND.
+         // (satiety - 60) ranges from 0 to 40.
+         // (40^2) = 1600.
+         // We want reasonable probability.
+         // At 100 satiety (1600 score), let's say 20% chance per second.
+         // 1600 * k = 0.20 -> k = 0.000125
+
+         const baseChance = Math.pow((this.satiety - 60), 2); // 0 to 1600
+         const k = 0.000125;
+         const probabilityPerSecond = baseChance * k;
+
+         // Convert to per-frame probability based on delta (ms)
+         // prob = 1 - (1 - probPerSec)^(delta/1000) ~ probPerSec * (delta/1000) for small probs
+         const frameProbability = probabilityPerSecond * (delta / 1000);
+
+         if (Math.random() < frameProbability) {
              this.moveState = MoveState.SEEKING_MATE;
              this.isSeekingMate = true;
          }
@@ -203,24 +254,25 @@ export default class Bean extends Phaser.GameObjects.Container {
              this.moveTarget = new Phaser.Math.Vector2(mate.x, mate.y);
              const targetAngle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
              this.facingAngle = targetAngle;
-             // Don't separate from other beans too much if we want to merge!
+             // IMPORTANT: When seeking mate, we DO NOT apply separation force in the same way
+             // because we WANT to collide/merge.
         } else {
              // No mate found, look around randomly
              if (!this.moveTarget || (this.moveTarget && this.hasReachedTarget())) {
                  this.pickRandomTarget();
              }
 
-             // Face the random target
              if (this.moveTarget) {
                  const targetAngle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
                  this.facingAngle = targetAngle;
              }
         }
 
-        // Burst periodically
-         if (this.stateTimer <= 0) {
+        // Burst movement
+        if (this.stateTimer <= 0) {
           this.burst();
-          this.stateTimer = this.CHARGE_DURATION * 2; // Slower burst rate when seeking love?
+          // If seeking mate, burst more frequently?
+          this.stateTimer = this.CHARGE_DURATION;
         }
         break;
 
@@ -234,14 +286,7 @@ export default class Bean extends Phaser.GameObjects.Container {
 
           if (separationVector.length() > 0) {
             // Combine target direction and separation direction
-            // We do this by adding vectors: Target Vector + Separation Vector
-
-            // Vector towards target (normalized)
             const targetVec = new Phaser.Math.Vector2(Math.cos(targetAngle), Math.sin(targetAngle));
-
-            // Weighting: How much we prioritize separation vs target
-            // Separation vector is already weighted by inverse distance (stronger when closer)
-            // But we might need to tune the mix.
             const separationWeight = 2.5; // Strong repulsion to ensure they don't stick
 
             const combinedVec = targetVec.add(separationVector.scale(separationWeight));
@@ -267,7 +312,7 @@ export default class Bean extends Phaser.GameObjects.Container {
         // If we are far from the target, start the next hop before stopping completely
         // to create a smoother, continuous movement.
         if (this.moveTarget && dist > 100 && body.speed < 150) {
-          this.moveState = MoveState.CHARGING;
+          this.moveState = this.isSeekingMate ? MoveState.SEEKING_MATE : MoveState.CHARGING;
           this.stateTimer = this.CHARGE_DURATION;
         } else if (body.speed < 10) {
            body.setVelocity(0,0);
@@ -367,8 +412,6 @@ export default class Bean extends Phaser.GameObjects.Container {
     if (count > 0) {
       // Average
       separationForce.scale(1.0 / count);
-      // Normalize to get direction, but keep magnitude for importance?
-      // Actually standard boids separation is usually just normalized sum.
       separationForce.normalize();
     }
 
