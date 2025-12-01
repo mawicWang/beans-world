@@ -112,7 +112,7 @@ export default class Bean extends Phaser.GameObjects.Container {
   private setIdle() {
     this.moveState = MoveState.IDLE;
     this.isSeekingMate = false;
-    this.stateTimer = this.scene.time.now + Phaser.Math.Between(this.IDLE_DURATION_MIN, this.IDLE_DURATION_MAX);
+    this.stateTimer = Phaser.Math.Between(this.IDLE_DURATION_MIN, this.IDLE_DURATION_MAX);
     this.moveTarget = null;
   }
 
@@ -124,7 +124,7 @@ export default class Bean extends Phaser.GameObjects.Container {
     this.moveTarget = new Phaser.Math.Vector2(tx, ty);
   }
 
-  update(time: number, delta: number) {
+  update(_time: number, delta: number) {
     const body = this.body as Phaser.Physics.Arcade.Body;
     if (!body) return; // Safety check in case update is called before physics setup
 
@@ -182,12 +182,16 @@ export default class Bean extends Phaser.GameObjects.Container {
     }
 
     // 1. State Machine
+    if (this.stateTimer > 0) {
+      this.stateTimer -= delta;
+    }
+
     switch (this.moveState) {
       case MoveState.IDLE:
-        if (time > this.stateTimer) {
+        if (this.stateTimer <= 0) {
           this.pickTarget();
           this.moveState = MoveState.CHARGING;
-          this.stateTimer = time + this.CHARGE_DURATION;
+          this.stateTimer = this.CHARGE_DURATION;
         }
         break;
 
@@ -214,9 +218,9 @@ export default class Bean extends Phaser.GameObjects.Container {
         }
 
         // Burst periodically
-         if (time > this.stateTimer) {
+         if (this.stateTimer <= 0) {
           this.burst();
-          this.stateTimer = time + this.CHARGE_DURATION * 2; // Slower burst rate when seeking love?
+          this.stateTimer = this.CHARGE_DURATION * 2; // Slower burst rate when seeking love?
         }
         break;
 
@@ -247,7 +251,7 @@ export default class Bean extends Phaser.GameObjects.Container {
           }
         }
 
-        if (time > this.stateTimer) {
+        if (this.stateTimer <= 0) {
           this.burst();
         }
         break;
@@ -264,13 +268,13 @@ export default class Bean extends Phaser.GameObjects.Container {
         // to create a smoother, continuous movement.
         if (this.moveTarget && dist > 100 && body.speed < 150) {
           this.moveState = MoveState.CHARGING;
-          this.stateTimer = time + this.CHARGE_DURATION;
+          this.stateTimer = this.CHARGE_DURATION;
         } else if (body.speed < 10) {
            body.setVelocity(0,0);
 
            if (this.isSeekingMate) {
                this.moveState = MoveState.SEEKING_MATE;
-               this.stateTimer = time; // Ready to burst/seek again immediately or soon
+               this.stateTimer = 0; // Ready to burst/seek again immediately or soon
            } else {
                this.setIdle();
            }
