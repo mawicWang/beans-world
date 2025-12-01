@@ -261,9 +261,8 @@ export default class GameScene extends Phaser.Scene {
 
     if (!b1.active || !b2.active) return true;
 
-    const readyStates = [MoveState.SEEKING_MATE, MoveState.MOVING_TO_PARTNER];
-    const b1Ready = readyStates.includes(b1.moveState);
-    const b2Ready = readyStates.includes(b2.moveState);
+    const b1Ready = b1.isSeekingMate;
+    const b2Ready = b2.isSeekingMate;
 
     // If both are ready to mate
     if (b1Ready && b2Ready) {
@@ -285,10 +284,8 @@ export default class GameScene extends Phaser.Scene {
       // Checking 'active' is the key.
       if (!bean1.active || !bean2.active) return;
 
-      const readyStates = [MoveState.SEEKING_MATE, MoveState.MOVING_TO_PARTNER];
-
-      const b1Ready = readyStates.includes(bean1.moveState);
-      const b2Ready = readyStates.includes(bean2.moveState);
+      const b1Ready = bean1.isSeekingMate;
+      const b2Ready = bean2.isSeekingMate;
 
       if (b1Ready && b2Ready) {
           // Check Locking Compatibility
