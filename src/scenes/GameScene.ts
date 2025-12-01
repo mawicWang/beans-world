@@ -12,6 +12,7 @@ export default class GameScene extends Phaser.Scene {
 
   private isPaused: boolean = false;
   private currentSpeed: number = 1;
+  private simTime: number = 0;
 
   constructor() {
     super('GameScene');
@@ -146,16 +147,15 @@ export default class GameScene extends Phaser.Scene {
     // We use this.currentSpeed because Phaser core delta is real-time (unscaled)
     const scaledDelta = delta * this.currentSpeed;
 
-    // Use this.time.now for consistency with scaled time (timers)
-    // this.time.now is automatically scaled by this.time.timeScale
-    const scaledTime = this.time.now;
+    // Accumulate simulation time
+    this.simTime += scaledDelta;
 
     // Update simulation time in registry for UI
-    this.registry.set('simTime', scaledTime);
+    this.registry.set('simTime', this.simTime);
 
     // Iterate backwards to safely handle removals during update
     for (let i = this.beans.length - 1; i >= 0; i--) {
-        this.beans[i].update(scaledTime, scaledDelta);
+        this.beans[i].update(this.simTime, scaledDelta);
     }
   }
 
