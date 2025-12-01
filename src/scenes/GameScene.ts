@@ -93,7 +93,7 @@ export default class GameScene extends Phaser.Scene {
 
     // Food Spawning Timer
     this.time.addEvent({
-        delay: 3000,
+        delay: 500,
         callback: this.spawnFood,
         callbackScope: this,
         loop: true
@@ -149,6 +149,9 @@ export default class GameScene extends Phaser.Scene {
     // Use this.time.now for consistency with scaled time (timers)
     // this.time.now is automatically scaled by this.time.timeScale
     const scaledTime = this.time.now;
+
+    // Update simulation time in registry for UI
+    this.registry.set('simTime', scaledTime);
 
     // Iterate backwards to safely handle removals during update
     for (let i = this.beans.length - 1; i >= 0; i--) {
