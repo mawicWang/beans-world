@@ -350,6 +350,10 @@ export default class GameScene extends Phaser.Scene {
           this.createCollisionParticles((b1.x + b2.x) / 2, (b1.y + b2.y) / 2);
           this.playCombatSound();
 
+          // Visuals
+          guard.triggerCombat();
+          intruder.triggerCombat();
+
           // Check Fleeing
           if (intruder.satiety < 20) {
               intruder.fleeFrom(guard);

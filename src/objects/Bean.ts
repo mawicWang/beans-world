@@ -32,6 +32,7 @@ export default class Bean extends Phaser.GameObjects.Container {
   private facingAngle: number = 0;
   public isSeekingMate: boolean = false;
   private stuckTimer: number = 0;
+  private combatTimer: number = 0;
 
   // Reproduction Locking
   public lockedPartner: Bean | null = null;
@@ -236,9 +237,17 @@ export default class Bean extends Phaser.GameObjects.Container {
       this.isSeekingMate = true; // Technically still seeking, but specifically targeting
   }
 
+  public triggerCombat() {
+    this.combatTimer = 500; // Show combat icon for 0.5s
+  }
+
   update(_time: number, delta: number, render: boolean = true) {
     const body = this.body as Phaser.Physics.Arcade.Body;
     if (!body) return; // Safety check in case update is called before physics setup
+
+    if (this.combatTimer > 0) {
+      this.combatTimer -= delta;
+    }
 
     // 0. Growth & Lifecycle
     if (!this.isAdult) {
@@ -923,10 +932,82 @@ export default class Bean extends Phaser.GameObjects.Container {
     this.bodyGraphics.fillPath();
     this.bodyGraphics.strokePath();
 
-    // Draw hearts if courting/locked
-    if (this.lockedPartner || (this.moveState === MoveState.SEEKING_MATE && this.isSeekingMate)) {
+    // Draw Icons (Combat > Guard > Love)
+    const iconY = -headRadius - 15;
+
+    if (this.combatTimer > 0) {
+        // Draw Anger Mark (Red jagged lines)
+        this.bodyGraphics.lineStyle(2, 0xff0000, 1);
+        this.bodyGraphics.beginPath();
+        // A simple "vein" mark or cross
+        const s = 6; // size
+        // Left curve
+        this.bodyGraphics.moveTo(-s, iconY - s);
+        this.bodyGraphics.lineTo(-s/2, iconY);
+        this.bodyGraphics.lineTo(-s, iconY + s);
+        // Right curve
+        this.bodyGraphics.moveTo(s, iconY - s);
+        this.bodyGraphics.lineTo(s/2, iconY);
+        this.bodyGraphics.lineTo(s, iconY + s);
+        // Center curve
+        this.bodyGraphics.moveTo(0, iconY - s);
+        this.bodyGraphics.lineTo(0, iconY + s);
+
+        this.bodyGraphics.strokePath();
+
+    } else if (this.moveState === MoveState.GUARDING || this.moveState === MoveState.CHASING_ENEMY) {
+        // Draw Shield (Blue/Silver)
+        this.bodyGraphics.fillStyle(0x4a90e2, 1); // Blue
+        this.bodyGraphics.lineStyle(1, 0xffffff, 1);
+
+        const s = 8;
+        this.bodyGraphics.beginPath();
+        // Shield shape: Simple polygon to avoid curve complexity
+        this.bodyGraphics.moveTo(-s, iconY - s);
+        this.bodyGraphics.lineTo(s, iconY - s);
+        this.bodyGraphics.lineTo(s, iconY);
+        this.bodyGraphics.lineTo(0, iconY + s*1.5); // Pointy bottom
+        this.bodyGraphics.lineTo(-s, iconY);
+        this.bodyGraphics.closePath();
+
+        this.bodyGraphics.fillPath();
+        this.bodyGraphics.strokePath();
+
+        // Cross on shield
+        this.bodyGraphics.beginPath();
+        this.bodyGraphics.moveTo(-s/2, iconY - s/2);
+        this.bodyGraphics.lineTo(s/2, iconY + s/4); // diagonal? No just a cross
+        this.bodyGraphics.strokePath();
+
+    } else if (this.lockedPartner || (this.moveState === MoveState.SEEKING_MATE && this.isSeekingMate)) {
+         // Draw Heart (Pink)
          this.bodyGraphics.fillStyle(0xff69b4, 1); // Hot pink
-         this.bodyGraphics.fillCircle(0, -headRadius - 5, 3);
+         this.bodyGraphics.lineStyle(1, 0xffffff, 1);
+
+         const s = 4; // radius of circles
+         // Heart shape using two circles and a triangle
+         // Left circle
+         this.bodyGraphics.fillCircle(-s, iconY - s/2, s);
+         this.bodyGraphics.strokeCircle(-s, iconY - s/2, s);
+
+         // Right circle
+         this.bodyGraphics.fillCircle(s, iconY - s/2, s);
+         this.bodyGraphics.strokeCircle(s, iconY - s/2, s);
+
+         // Bottom Triangle (to make it look like a heart)
+         this.bodyGraphics.beginPath();
+         this.bodyGraphics.moveTo(-s * 2, iconY - s/2);
+         this.bodyGraphics.lineTo(0, iconY + s * 2.5);
+         this.bodyGraphics.lineTo(s * 2, iconY - s/2);
+         this.bodyGraphics.fillPath();
+
+         // Clean up outline (re-stroke the V shape)
+         this.bodyGraphics.beginPath();
+         // Determine intersection points for nicer look or just simple V
+         this.bodyGraphics.moveTo(-s * 1.8, iconY);
+         this.bodyGraphics.lineTo(0, iconY + s * 2.5);
+         this.bodyGraphics.lineTo(s * 1.8, iconY);
+         this.bodyGraphics.strokePath();
     }
 
     // Draw carried food lump
