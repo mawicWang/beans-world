@@ -2,11 +2,14 @@ import Phaser from 'phaser';
 import GameScene from './scenes/GameScene';
 import UIScene from './scenes/UIScene';
 import DevScene from './scenes/DevScene';
+// import CollisionTestScene from './scenes/CollisionTestScene';
 
 // Use a simple flag or URL param to switch modes
-const useDevScene = true; // Hardcode for this task, or use urlParams.has('dev');
+const useDevScene = false; // Hardcode for this task, or use urlParams.has('dev');
 
 const sceneList = useDevScene ? [DevScene] : [GameScene, UIScene];
+
+// const sceneList = [CollisionTestScene]; // For debugging collision
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,

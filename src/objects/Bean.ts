@@ -22,6 +22,7 @@ export default class Bean extends Phaser.GameObjects.Container {
   private moveTarget: Phaser.Math.Vector2 | null = null;
   private facingAngle: number = 0;
   public isSeekingMate: boolean = false;
+  private stuckTimer: number = 0;
 
   // Reproduction Locking
   public lockedPartner: Bean | null = null;
@@ -345,6 +346,9 @@ export default class Bean extends Phaser.GameObjects.Container {
         break;
 
       case MoveState.DECELERATING:
+        // If we are recovering from being stuck, wait for the timer
+        if (this.stateTimer > 0) break;
+
         const dist = this.moveTarget ? Phaser.Math.Distance.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y) : 0;
 
         // If we are far from the target, start the next hop before stopping completely
@@ -369,6 +373,19 @@ export default class Bean extends Phaser.GameObjects.Container {
            }
         }
         break;
+    }
+
+    // 1.5 Stuck Detection
+    // If we are trying to move but barely moving and touching something, we are likely stuck
+    const isMovingState = this.moveState === MoveState.CHARGING || this.moveState === MoveState.MOVING_TO_PARTNER;
+    if (isMovingState && !body.touching.none && body.speed < 20) {
+        this.stuckTimer += delta;
+        if (this.stuckTimer > 500) { // 0.5s stuck threshold
+            this.handleStuck();
+            this.stuckTimer = 0;
+        }
+    } else {
+        this.stuckTimer = 0;
     }
 
     // 2. Tail Physics (Elastic Rope System)
@@ -527,6 +544,24 @@ export default class Bean extends Phaser.GameObjects.Container {
     this.scene.physics.velocityFromRotation(angle, this.BURST_SPEED, body.velocity);
     this.playMoveSound();
     this.moveState = MoveState.BURSTING;
+  }
+
+  private handleStuck() {
+      // We are stuck. Apply a strong impulse in a random sideways direction to dislodge.
+      const body = this.body as Phaser.Physics.Arcade.Body;
+
+      // Pick left or right relative to current facing
+      const direction = Math.random() > 0.5 ? 1 : -1;
+      const escapeAngle = this.facingAngle + (direction * Math.PI / 2);
+
+      // Apply burst
+      this.scene.physics.velocityFromRotation(escapeAngle, this.BURST_SPEED, body.velocity);
+      this.playMoveSound();
+
+      // Transition to DECELERATING with a cooldown to let the physics separation happen
+      // before we try to resume our original path.
+      this.moveState = MoveState.DECELERATING;
+      this.stateTimer = 500; // Wait 0.5s before resuming standard logic
   }
 
   private drawJelly(tailOffset: Phaser.Math.Vector2) {
