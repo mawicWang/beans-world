@@ -138,7 +138,7 @@ export default class GameScene extends Phaser.Scene {
     this.drawBounds(gameSize.width, gameSize.height);
   }
 
-  update(time: number, delta: number) {
+  update(_time: number, delta: number) {
     if (this.isPaused) return;
 
     // Scale delta for custom logic (age, satiety)

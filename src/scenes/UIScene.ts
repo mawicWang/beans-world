@@ -12,7 +12,6 @@ export default class UIScene extends Phaser.Scene {
   private speedValues: number[] = [1, 2, 5];
   private pauseText!: Phaser.GameObjects.Text;
   private speedText!: Phaser.GameObjects.Text;
-  private pauseButtonBg!: Phaser.GameObjects.Rectangle; // To change color if needed
 
   constructor() {
     super('UIScene');
@@ -106,7 +105,6 @@ export default class UIScene extends Phaser.Scene {
     // Pause Button (Left)
     // Width 55, Height 50
     const pauseBg = this.add.rectangle(-32.5, 0, 55, 50, 0xF44336); // Red-ish for stop/control
-    this.pauseButtonBg = pauseBg;
 
     pauseBg.setInteractive({ useHandCursor: true })
       .on('pointerdown', () => {
