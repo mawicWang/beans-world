@@ -76,6 +76,10 @@ export default class Bean extends Phaser.GameObjects.Container {
   private currentRadius = 15;
   private mainColor: number = 0xffffff;
 
+  private get hoardRadius(): number {
+      return this.adultRadius * 2.5;
+  }
+
   constructor(
       scene: Phaser.Scene,
       x: number,
@@ -335,7 +339,7 @@ export default class Bean extends Phaser.GameObjects.Container {
         // Transition to Guarding if near hoard
         if (this.hoardLocation) {
             const distToHoard = Phaser.Math.Distance.Between(this.x, this.y, this.hoardLocation.x, this.hoardLocation.y);
-            if (distToHoard < 100) {
+            if (distToHoard < this.hoardRadius) {
                 this.moveState = MoveState.GUARDING;
                 this.isGuarding = true;
                 this.stateTimer = Phaser.Math.Between(2000, 4000); // Guard duty duration before checking again or moving slightly
@@ -364,7 +368,7 @@ export default class Bean extends Phaser.GameObjects.Container {
               // Pick a point near hoard
               if (this.hoardLocation) {
                   const angle = Math.random() * Math.PI * 2;
-                  const dist = Math.random() * 80;
+                  const dist = Math.random() * this.hoardRadius;
                   this.moveTarget = new Phaser.Math.Vector2(
                       this.hoardLocation.x + Math.cos(angle) * dist,
                       this.hoardLocation.y + Math.sin(angle) * dist
@@ -961,8 +965,13 @@ export default class Bean extends Phaser.GameObjects.Container {
     if (this.hoardLocation) {
         const localHoardX = this.hoardLocation.x - this.x;
         const localHoardY = this.hoardLocation.y - this.y;
-        this.bodyGraphics.lineStyle(2, 0xffffff, 0.1);
-        this.bodyGraphics.strokeCircle(localHoardX, localHoardY, this.MAX_CHASE_DIST);
+
+        // Semi-transparent green circle with thicker darker border
+        this.bodyGraphics.fillStyle(0x00ff00, 0.1);
+        this.bodyGraphics.fillCircle(localHoardX, localHoardY, this.hoardRadius);
+
+        this.bodyGraphics.lineStyle(3, 0x006400, 0.5);
+        this.bodyGraphics.strokeCircle(localHoardX, localHoardY, this.hoardRadius);
     }
 
     // Draw Icons (Combat > Guard > Love)
