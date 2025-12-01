@@ -40,39 +40,68 @@ export default class Bean extends Phaser.GameObjects.Container {
   private readonly VISION_RADIUS = 200;
   private isFull: boolean = false;
 
+  // Attributes
+  public strength: number = 5;
+  public speed: number = 5;
+  public constitution: number = 5;
+  private maxSatiety: number = 100;
+
+  // Attribute Constraints
+  public static readonly MIN_ATTR = 1;
+  public static readonly MAX_ATTR = 20;
+
   // Constants
   private readonly SPRING_STIFFNESS = 0.1;
   private readonly SPRING_DAMPING = 0.6;
   private readonly ROPE_LENGTH = 0; // Slack length for "rope" feel
-  private readonly BURST_SPEED = 200; // Decreased for smoother movement
   private readonly CHARGE_DURATION = 300; // ms
   private readonly IDLE_DURATION_MIN = 500;
   private readonly IDLE_DURATION_MAX = 2000;
 
   // Visuals
-  private readonly ADULT_RADIUS = 15;
-  private readonly CHILD_RADIUS = 9; // 0.6 * 15
+  private adultRadius = 15;
   private currentRadius = 15;
-  private mainColor: number;
+  private mainColor: number = 0xffffff;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, startSatiety: number = 80, startAdult: boolean = true, showStats: boolean = false) {
+  constructor(
+      scene: Phaser.Scene,
+      x: number,
+      y: number,
+      startSatiety: number = 80,
+      startAdult: boolean = true,
+      showStats: boolean = false,
+      attributes: { strength?: number, speed?: number, constitution?: number } = {}
+  ) {
     super(scene, x, y);
 
     this.satiety = startSatiety;
     this.isAdult = startAdult;
-    this.currentRadius = this.isAdult ? this.ADULT_RADIUS : this.CHILD_RADIUS;
 
-    // Pick a jelly-like color (variations of blue/cyan/purple)
-    const colors = [0x4aa3df, 0x50c8e0, 0x6e8cd4, 0x4dd0e1];
-    this.mainColor = Phaser.Utils.Array.GetRandom(colors);
+    // Initialize Attributes
+    this.strength = Phaser.Math.Clamp(attributes.strength ?? 5, Bean.MIN_ATTR, Bean.MAX_ATTR);
+    this.speed = Phaser.Math.Clamp(attributes.speed ?? 5, Bean.MIN_ATTR, Bean.MAX_ATTR);
+    this.constitution = Phaser.Math.Clamp(attributes.constitution ?? 5, Bean.MIN_ATTR, Bean.MAX_ATTR);
+
+    // Calculate derived stats
+    this.maxSatiety = 80 + (this.constitution * 2); // Range 82 - 120
+    this.adultRadius = 10 + (this.constitution * 0.5); // Range 10.5 - 20
+    this.currentRadius = this.isAdult ? this.adultRadius : this.adultRadius * 0.6;
+
+    this.updateVisuals();
 
     this.bodyGraphics = scene.add.graphics();
     this.add(this.bodyGraphics);
 
     // Status Panel
     this.statusPanel = scene.add.container(25, -25);
-    const panelBg = scene.add.rectangle(0, 0, 50, 20, 0x000000, 0.5);
-    this.statusText = scene.add.text(0, 0, '80', { fontSize: '12px', color: '#fff' }).setOrigin(0.5);
+    // Background size will be dynamic based on text
+    const panelBg = scene.add.rectangle(0, 0, 80, 50, 0x000000, 0.6);
+    this.statusText = scene.add.text(0, 0, this.getStatsText(), {
+        fontSize: '10px',
+        color: '#fff',
+        align: 'left'
+    }).setOrigin(0.5);
+
     this.statusPanel.add([panelBg, this.statusText]);
     this.statusPanel.setVisible(showStats);
     this.add(this.statusPanel);
@@ -145,7 +174,7 @@ export default class Bean extends Phaser.GameObjects.Container {
       // Animate the growth
       // Store initial radius for interpolation
       const startRadius = this.currentRadius;
-      const targetRadius = this.ADULT_RADIUS;
+      const targetRadius = this.adultRadius;
 
       this.scene.tweens.add({
           targets: this,
@@ -190,17 +219,20 @@ export default class Bean extends Phaser.GameObjects.Container {
     // 0.5. Satiety Decay
     const decayRate = body.speed > 5 ? 0.5 : 0.1;
     this.satiety -= decayRate * (delta / 1000);
-    this.statusText.setText(Math.floor(this.satiety).toString());
+
+    // Update stats text (can be expensive to do every frame, maybe throttle?)
+    // For now, doing it every frame as per previous pattern
+    this.statusText.setText(this.getStatsText());
 
     if (this.satiety <= 0) {
         // Die
         const scene = this.scene as unknown as GameScene;
         scene.removeBean(this);
         return;
-    } else if (this.satiety >= 100) {
-        this.satiety = 100;
+    } else if (this.satiety >= this.maxSatiety) {
+        this.satiety = this.maxSatiety;
         this.isFull = true;
-    } else if (this.satiety < 90) {
+    } else if (this.satiety < this.maxSatiety * 0.9) {
         this.isFull = false;
     }
 
@@ -533,6 +565,24 @@ export default class Bean extends Phaser.GameObjects.Container {
   public eat(food: Food) {
       if (this.isFull) return;
       this.satiety += food.satiety;
+
+      // Apply Attribute Bonus
+      if (food.attributeBonus) {
+          const { type, value } = food.attributeBonus;
+          if (type === 'strength') this.strength = Phaser.Math.Clamp(this.strength + value, Bean.MIN_ATTR, Bean.MAX_ATTR);
+          if (type === 'speed') this.speed = Phaser.Math.Clamp(this.speed + value, Bean.MIN_ATTR, Bean.MAX_ATTR);
+          if (type === 'constitution') {
+              this.constitution = Phaser.Math.Clamp(this.constitution + value, Bean.MIN_ATTR, Bean.MAX_ATTR);
+              // Update derived stats from constitution
+              this.maxSatiety = 80 + (this.constitution * 2);
+              this.adultRadius = 10 + (this.constitution * 0.5);
+              if (this.isAdult) {
+                  this.currentRadius = this.adultRadius;
+                  this.updatePhysicsBodySize();
+              }
+          }
+      }
+
       const scene = this.scene as unknown as GameScene;
       scene.removeFood(food);
   }
@@ -541,7 +591,12 @@ export default class Bean extends Phaser.GameObjects.Container {
     if (!this.moveTarget) return;
     const body = this.body as Phaser.Physics.Arcade.Body;
     const angle = this.facingAngle;
-    this.scene.physics.velocityFromRotation(angle, this.BURST_SPEED, body.velocity);
+
+    // Calculate Speed based on attribute
+    // Base 150 + (Speed * 10). Min 160, Max 350.
+    const burstSpeed = 150 + (this.speed * 10);
+
+    this.scene.physics.velocityFromRotation(angle, burstSpeed, body.velocity);
     this.playMoveSound();
     this.moveState = MoveState.BURSTING;
   }
@@ -555,7 +610,8 @@ export default class Bean extends Phaser.GameObjects.Container {
       const escapeAngle = this.facingAngle + (direction * Math.PI / 2);
 
       // Apply burst
-      this.scene.physics.velocityFromRotation(escapeAngle, this.BURST_SPEED, body.velocity);
+      const burstSpeed = 150 + (this.speed * 10);
+      this.scene.physics.velocityFromRotation(escapeAngle, burstSpeed, body.velocity);
       this.playMoveSound();
 
       // Transition to DECELERATING with a cooldown to let the physics separation happen
@@ -564,8 +620,33 @@ export default class Bean extends Phaser.GameObjects.Container {
       this.stateTimer = 500; // Wait 0.5s before resuming standard logic
   }
 
+  private updateVisuals() {
+      // Map attributes to visuals
+      // Strength -> Red (0-255)
+      const red = Phaser.Math.Clamp(Phaser.Math.Linear(50, 255, (this.strength - Bean.MIN_ATTR) / (Bean.MAX_ATTR - Bean.MIN_ATTR)), 0, 255);
+
+      // Speed -> Blue (0-255)
+      const blue = Phaser.Math.Clamp(Phaser.Math.Linear(50, 255, (this.speed - Bean.MIN_ATTR) / (Bean.MAX_ATTR - Bean.MIN_ATTR)), 0, 255);
+
+      // Green -> Fixed base
+      const green = 100;
+
+      this.mainColor = Phaser.Display.Color.GetColor(red, green, blue);
+  }
+
+  public getStatsText(): string {
+      return `Sat: ${Math.floor(this.satiety)}/${this.maxSatiety}\n` +
+             `Str: ${this.strength.toFixed(1)}\n` +
+             `Spd: ${this.speed.toFixed(1)}\n` +
+             `Con: ${this.constitution.toFixed(1)}`;
+  }
+
   private drawJelly(tailOffset: Phaser.Math.Vector2) {
+    this.updateVisuals();
     this.bodyGraphics.clear();
+
+    // Map satiety (0-100) to Alpha (0.4 - 1.0)
+    const alpha = Phaser.Math.Clamp(0.4 + (this.satiety / this.maxSatiety) * 0.6, 0.4, 1.0);
 
     let dist = tailOffset.length();
     if (dist < 0.5) dist = 0;
@@ -580,8 +661,8 @@ export default class Bean extends Phaser.GameObjects.Container {
     const tx = tailOffset.x;
     const ty = tailOffset.y;
 
-    this.bodyGraphics.fillStyle(this.mainColor, 0.9);
-    this.bodyGraphics.lineStyle(2, 0x1a5f8a, 1.0);
+    this.bodyGraphics.fillStyle(this.mainColor, alpha);
+    this.bodyGraphics.lineStyle(2, 0x1a5f8a, alpha);
 
     const angle = Phaser.Math.Angle.Between(tx, ty, hx, hy);
 

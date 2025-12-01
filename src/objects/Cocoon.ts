@@ -7,11 +7,21 @@ export default class Cocoon extends Phaser.GameObjects.Container {
   private bodyGraphics: Phaser.GameObjects.Graphics;
   private mainColor: number;
   private baseRadius: number = 13; // Slightly smaller than Adult Bean (15)
+  private parentsAttributes: { strength: number[], speed: number[], constitution: number[] };
 
-  constructor(scene: Phaser.Scene, x: number, y: number, totalSatiety: number, color1: number, color2: number) {
+  constructor(
+      scene: Phaser.Scene,
+      x: number,
+      y: number,
+      totalSatiety: number,
+      color1: number,
+      color2: number,
+      parentsAttributes: { strength: number[], speed: number[], constitution: number[] }
+    ) {
     super(scene, x, y);
 
     this.totalSatiety = totalSatiety;
+    this.parentsAttributes = parentsAttributes;
 
     // Mix the colors of the parents
     this.mainColor = Phaser.Display.Color.Interpolate.ColorWithColor(
@@ -109,12 +119,30 @@ export default class Cocoon extends Phaser.GameObjects.Container {
         const spawnX = this.x + Math.cos(angle) * offset;
         const spawnY = this.y + Math.sin(angle) * offset;
 
+        // Calculate Attributes for this child
+        const newAttributes = {
+            strength: this.mutate(this.average(this.parentsAttributes.strength)),
+            speed: this.mutate(this.average(this.parentsAttributes.speed)),
+            constitution: this.mutate(this.average(this.parentsAttributes.constitution))
+        };
+
         // Spawn child: isAdult = false
         if (scene.spawnBean) {
-            scene.spawnBean(spawnX, spawnY, satietyPerChild, false);
+            scene.spawnBean(spawnX, spawnY, satietyPerChild, false, newAttributes);
         }
     }
 
     this.destroy();
+  }
+
+  private average(values: number[]): number {
+      const sum = values.reduce((a, b) => a + b, 0);
+      return sum / values.length;
+  }
+
+  private mutate(value: number): number {
+      // Small mutation: +/- 0.5
+      const mutation = Phaser.Math.FloatBetween(-0.5, 0.5);
+      return value + mutation;
   }
 }

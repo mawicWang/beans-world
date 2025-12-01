@@ -135,10 +135,10 @@ export default class GameScene extends Phaser.Scene {
     this.spawnBean(pointer.x, pointer.y);
   }
 
-  spawnBean(x?: number, y?: number, startSatiety: number = 80, isAdult: boolean = true) {
+  spawnBean(x?: number, y?: number, startSatiety: number = 80, isAdult: boolean = true, attributes: { strength?: number, speed?: number, constitution?: number } = {}) {
     const spawnX = x ?? Phaser.Math.Between(50, this.scale.width - 50);
     const spawnY = y ?? Phaser.Math.Between(50, this.scale.height - 50);
-    const bean = new Bean(this, spawnX, spawnY, startSatiety, isAdult, this.areStatsVisible);
+    const bean = new Bean(this, spawnX, spawnY, startSatiety, isAdult, this.areStatsVisible, attributes);
     this.add.existing(bean);
     this.beans.push(bean);
     this.beanGroup.add(bean);
@@ -235,7 +235,18 @@ export default class GameScene extends Phaser.Scene {
       if (typeRoll > 0.9) satiety = 5;
       else if (typeRoll > 0.6) satiety = 2;
 
-      const food = new Food(this, x, y, satiety);
+      let bonus: { type: 'strength' | 'speed' | 'constitution', value: number } | undefined;
+      // 10% chance for attribute bonus
+      if (Math.random() < 0.1) {
+          const attrRoll = Math.random();
+          let type: 'strength' | 'speed' | 'constitution' = 'strength';
+          if (attrRoll > 0.66) type = 'speed';
+          else if (attrRoll > 0.33) type = 'constitution';
+
+          bonus = { type, value: 0.5 };
+      }
+
+      const food = new Food(this, x, y, satiety, bonus);
       this.add.existing(food);
       this.foods.push(food);
       this.foodGroup.add(food);
@@ -316,8 +327,14 @@ export default class GameScene extends Phaser.Scene {
       const color1 = parent1.getMainColor();
       const color2 = parent2.getMainColor();
 
+      const parentsAttributes = {
+          strength: [parent1.strength, parent2.strength],
+          speed: [parent1.speed, parent2.speed],
+          constitution: [parent1.constitution, parent2.constitution]
+      };
+
       // Create Cocoon
-      const cocoon = new Cocoon(this, midX, midY, totalSatiety, color1, color2);
+      const cocoon = new Cocoon(this, midX, midY, totalSatiety, color1, color2, parentsAttributes);
       this.add.existing(cocoon);
 
       // Remove parents
