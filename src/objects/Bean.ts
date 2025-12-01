@@ -31,6 +31,7 @@ export default class Bean extends Phaser.GameObjects.Container {
   private moveTarget: Phaser.Math.Vector2 | null = null;
   private facingAngle: number = 0;
   public isSeekingMate: boolean = false;
+  public isGuarding: boolean = false;
   private stuckTimer: number = 0;
   private combatTimer: number = 0;
 
@@ -167,6 +168,7 @@ export default class Bean extends Phaser.GameObjects.Container {
     this.moveState = MoveState.IDLE;
     this.previousState = MoveState.IDLE;
     this.isSeekingMate = false;
+    this.isGuarding = false;
     this.lockedPartner = null;
     this.stateTimer = Phaser.Math.Between(this.IDLE_DURATION_MIN, this.IDLE_DURATION_MAX);
     this.moveTarget = null;
@@ -174,6 +176,7 @@ export default class Bean extends Phaser.GameObjects.Container {
 
   public fleeFrom(source: Phaser.Math.Vector2 | Phaser.GameObjects.GameObject) {
     this.moveState = MoveState.FLEEING;
+    this.isGuarding = false;
     this.stateTimer = 2000; // Flee for 2 seconds
 
     // Vector away from source
@@ -334,6 +337,7 @@ export default class Bean extends Phaser.GameObjects.Container {
             const distToHoard = Phaser.Math.Distance.Between(this.x, this.y, this.hoardLocation.x, this.hoardLocation.y);
             if (distToHoard < 100) {
                 this.moveState = MoveState.GUARDING;
+                this.isGuarding = true;
                 this.stateTimer = Phaser.Math.Between(2000, 4000); // Guard duty duration before checking again or moving slightly
                 break;
             }
@@ -787,6 +791,7 @@ export default class Bean extends Phaser.GameObjects.Container {
 
           // Transition to Hauling
           this.moveState = MoveState.HAULING_FOOD;
+          this.isGuarding = false;
 
           // Establish Hoard Location if not set
           if (!this.hoardLocation) {
@@ -983,7 +988,7 @@ export default class Bean extends Phaser.GameObjects.Container {
 
         this.bodyGraphics.strokePath();
 
-    } else if (this.moveState === MoveState.GUARDING || this.moveState === MoveState.CHASING_ENEMY) {
+    } else if (this.isGuarding) {
         // Draw Shield (Blue/Silver)
         this.bodyGraphics.fillStyle(0x4a90e2, 1); // Blue
         this.bodyGraphics.lineStyle(1, 0xffffff, 1);
@@ -1007,7 +1012,7 @@ export default class Bean extends Phaser.GameObjects.Container {
         this.bodyGraphics.lineTo(s/2, iconY + s/4); // diagonal? No just a cross
         this.bodyGraphics.strokePath();
 
-    } else if (this.lockedPartner || (this.moveState === MoveState.SEEKING_MATE && this.isSeekingMate)) {
+    } else if (this.lockedPartner || this.isSeekingMate) {
          // Draw Heart (Pink)
          this.bodyGraphics.fillStyle(0xff69b4, 1); // Hot pink
          this.bodyGraphics.lineStyle(1, 0xffffff, 1);
