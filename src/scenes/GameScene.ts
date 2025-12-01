@@ -14,6 +14,10 @@ export default class GameScene extends Phaser.Scene {
   private currentSpeed: number = 1;
   private simTime: number = 0;
 
+  // Manual Timer for Food Spawning (since we don't rely on Phaser's TimeScale for this anymore)
+  private foodTimer: number = 0;
+  private readonly FOOD_SPAWN_INTERVAL = 500;
+
   constructor() {
     super('GameScene');
   }
@@ -90,17 +94,13 @@ export default class GameScene extends Phaser.Scene {
         this.physics.world.timeScale = 1.0;
 
         // Speed up global timers and tweens
-        this.time.timeScale = speed;
+        // Note: We intentionally DO NOT set this.time.timeScale, because it affects the 'delta'
+        // passed to update(), which makes our manual sub-stepping logic doubly-accelerated
+        // (speed * speed). Instead, we handle all timing manually based on currentSpeed.
         this.tweens.timeScale = speed;
     });
 
-    // Food Spawning Timer
-    this.time.addEvent({
-        delay: 500,
-        callback: this.spawnFood,
-        callbackScope: this,
-        loop: true
-    });
+    // We removed this.time.addEvent for food because we want to control it manually via update()
   }
 
   handleInput(pointer: Phaser.Input.Pointer) {
@@ -156,9 +156,6 @@ export default class GameScene extends Phaser.Scene {
     // We need to cover the rest: (currentSpeed - 1) * delta.
     let pendingTime = totalSimTime - delta;
 
-    // If speed is 1, pendingTime is 0.
-    // If speed is 50, pendingTime is 49 * delta.
-
     // Use a fixed small step for stability to prevent tunneling
     const stepSize = 16.66; // approx 60fps
 
@@ -197,6 +194,13 @@ export default class GameScene extends Phaser.Scene {
              // Pass true to render the final state
             this.beans[i].update(this.simTime, delta, true);
         }
+    }
+
+    // 3. Update Manual Food Timer
+    this.foodTimer += totalSimTime; // Use totalSimTime which includes speed factor
+    if (this.foodTimer >= this.FOOD_SPAWN_INTERVAL) {
+        this.spawnFood();
+        this.foodTimer -= this.FOOD_SPAWN_INTERVAL;
     }
   }
 
