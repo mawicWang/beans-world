@@ -8,8 +8,8 @@ export default class UIScene extends Phaser.Scene {
   private statsVisible: boolean = false;
 
   private isPaused: boolean = false;
-  private speedLevel: number = 0; // 0=1x, 1=2x, 2=5x
-  private speedValues: number[] = [1, 2, 5];
+  private speedLevel: number = 0; // 0=1x, 1=5x, 2=20x, 3=50x
+  private speedValues: number[] = [1, 5, 20, 50];
   private pauseText!: Phaser.GameObjects.Text;
   private speedText!: Phaser.GameObjects.Text;
 
@@ -19,7 +19,7 @@ export default class UIScene extends Phaser.Scene {
 
   create() {
     // Bean Count Text
-    this.beanCountText = this.add.text(20, 20, 'Beans: 0', {
+    this.beanCountText = this.add.text(20, 20, 'Beans: 0   Time: 00:00', {
       fontSize: '24px',
       color: '#000000',
       fontStyle: 'bold'
@@ -32,23 +32,36 @@ export default class UIScene extends Phaser.Scene {
 
     // Listen for updates
     this.game.events.on('UPDATE_BEAN_COUNT', (count: number) => {
-      this.beanCountText.setText(`Beans: ${count}`);
+      this.updateStatusText(count, this.registry.get('simTime') || 0);
     });
 
     // Also listen to registry for initial sync or other updates
     this.registry.events.on('changedata-beanCount', (_parent: any, value: number) => {
-      this.beanCountText.setText(`Beans: ${value}`);
+      this.updateStatusText(value, this.registry.get('simTime') || 0);
     });
 
     // Initial check
-    const currentCount = this.registry.get('beanCount');
-    if (currentCount !== undefined) {
-        this.beanCountText.setText(`Beans: ${currentCount}`);
-    }
+    const currentCount = this.registry.get('beanCount') || 0;
+    this.updateStatusText(currentCount, 0);
 
     // Handle resize
     this.scale.on('resize', this.resize, this);
     this.resize(this.scale.gameSize);
+  }
+
+  update() {
+    const simTime = this.registry.get('simTime') || 0;
+    const beanCount = this.registry.get('beanCount') || 0;
+    this.updateStatusText(beanCount, simTime);
+  }
+
+  private updateStatusText(count: number, timeMs: number) {
+      const totalSeconds = Math.floor(timeMs / 1000);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+
+      const timeStr = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+      this.beanCountText.setText(`Beans: ${count}   Time: ${timeStr}`);
   }
 
   private createAddButton() {
@@ -155,10 +168,7 @@ export default class UIScene extends Phaser.Scene {
 
   private updateSpeedVisuals() {
       const speed = this.speedValues[this.speedLevel];
-      let symbol = '>';
-      if (speed === 2) symbol = '>>';
-      if (speed === 5) symbol = '>>>';
-      this.speedText.setText(symbol);
+      this.speedText.setText(`${speed}x`);
   }
 
   resize(gameSize: Phaser.Structs.Size) {
