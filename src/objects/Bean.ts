@@ -68,6 +68,7 @@ export default class Bean extends Phaser.GameObjects.Container {
   private readonly CHARGE_DURATION = 300; // ms
   private readonly IDLE_DURATION_MIN = 500;
   private readonly IDLE_DURATION_MAX = 2000;
+  private readonly MAX_CHASE_DIST = 500;
 
   // Visuals
   private adultRadius = 15;
@@ -197,6 +198,15 @@ export default class Bean extends Phaser.GameObjects.Container {
   }
 
   private pickRandomTarget() {
+    // If we have a hoard and are far from it, return to it
+    if (this.hoardLocation) {
+        const dist = Phaser.Math.Distance.Between(this.x, this.y, this.hoardLocation.x, this.hoardLocation.y);
+        if (dist > 150) {
+             this.moveTarget = new Phaser.Math.Vector2(this.hoardLocation.x, this.hoardLocation.y);
+             return;
+        }
+    }
+
     const scene = this.scene as unknown as GameScene;
     const padding = 50;
     const tx = Phaser.Math.Between(padding, scene.scale.width - padding);
@@ -368,6 +378,16 @@ export default class Bean extends Phaser.GameObjects.Container {
       case MoveState.CHASING_ENEMY:
           // Chase logic
            const enemy = this.findIntruder();
+
+           // Check distance to hoard if we have one
+           if (this.hoardLocation) {
+               const distToHoard = Phaser.Math.Distance.Between(this.x, this.y, this.hoardLocation.x, this.hoardLocation.y);
+               if (distToHoard > this.MAX_CHASE_DIST) {
+                   this.setIdle();
+                   break;
+               }
+           }
+
            if (enemy) {
                this.moveTarget = new Phaser.Math.Vector2(enemy.x, enemy.y);
                const angle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
@@ -931,6 +951,14 @@ export default class Bean extends Phaser.GameObjects.Container {
 
     this.bodyGraphics.fillPath();
     this.bodyGraphics.strokePath();
+
+    // Draw Hoard Radius
+    if (this.hoardLocation) {
+        const localHoardX = this.hoardLocation.x - this.x;
+        const localHoardY = this.hoardLocation.y - this.y;
+        this.bodyGraphics.lineStyle(2, 0xffffff, 0.1);
+        this.bodyGraphics.strokeCircle(localHoardX, localHoardY, this.MAX_CHASE_DIST);
+    }
 
     // Draw Icons (Combat > Guard > Love)
     const iconY = -headRadius - 15;
