@@ -84,10 +84,12 @@ export default class GameScene extends Phaser.Scene {
     this.game.events.on('SET_GAME_SPEED', (speed: number) => {
         this.currentSpeed = speed;
         // Apply speed settings
-        // Note: In Phaser 3 Arcade Physics, timeScale scales the delta time step.
-        // A value of 2 means delta * 2, so physics runs 2x faster.
-        // Wait, actually for physics.world.timeScale, 0.5 is double speed, 2.0 is half speed.
-        this.physics.world.timeScale = 1.0 / speed;
+        // We do NOT use physics.world.timeScale to speed up physics, because it scales the delta
+        // which causes tunneling (objects jumping over each other) at high speeds.
+        // Instead, we sub-step the physics simulation manually in update().
+        this.physics.world.timeScale = 1.0;
+
+        // Speed up global timers and tweens
         this.time.timeScale = speed;
         this.tweens.timeScale = speed;
     });
@@ -143,19 +145,58 @@ export default class GameScene extends Phaser.Scene {
   update(_time: number, delta: number) {
     if (this.isPaused) return;
 
-    // Scale delta for custom logic (age, satiety)
-    // We use this.currentSpeed because Phaser core delta is real-time (unscaled)
-    const scaledDelta = delta * this.currentSpeed;
+    // Sub-stepping for high speed physics stability
+    // The automatic physics update runs ONCE per frame with `delta`.
+    // If currentSpeed > 1, we need to simulate the extra time manually.
 
-    // Accumulate simulation time
-    this.simTime += scaledDelta;
+    // Total time we want to advance this frame
+    const totalSimTime = delta * this.currentSpeed;
 
-    // Update simulation time in registry for UI
+    // The automatic step covers 'delta' amount of time (1x speed).
+    // We need to cover the rest: (currentSpeed - 1) * delta.
+    let pendingTime = totalSimTime - delta;
+
+    // If speed is 1, pendingTime is 0.
+    // If speed is 50, pendingTime is 49 * delta.
+
+    // Use a fixed small step for stability to prevent tunneling
+    const stepSize = 16.66; // approx 60fps
+
+    // 1. Perform extra sub-steps
+    while (pendingTime > 0) {
+        // Take a chunk, but don't exceed stepSize
+        // (We can use larger chunks if we are confident, but smaller is safer for collision)
+        let dt = pendingTime;
+        if (dt > stepSize) dt = stepSize;
+
+        pendingTime -= dt;
+
+        // Step physics manually
+        // Note: world.step expects seconds, so divide by 1000
+        this.physics.world.step(dt / 1000);
+
+        // Update logic (Beans) for this sub-step
+        // We pass 'false' to render because we don't want to draw intermediate states
+        this.simTime += dt;
+        for (let i = this.beans.length - 1; i >= 0; i--) {
+            // Check if bean is still valid (it might have died in previous sub-step)
+            if (this.beans[i].scene) {
+                this.beans[i].update(this.simTime, dt, false);
+            }
+        }
+    }
+
+    // 2. Perform the final update (for the Automatic Physics Step)
+    // Phaser will run one physics step after this update method returns, using 'delta'.
+    // We update the game logic to match that final step.
+    this.simTime += delta;
     this.registry.set('simTime', this.simTime);
 
-    // Iterate backwards to safely handle removals during update
     for (let i = this.beans.length - 1; i >= 0; i--) {
-        this.beans[i].update(this.simTime, scaledDelta);
+        if (this.beans[i].scene) {
+             // Pass true to render the final state
+            this.beans[i].update(this.simTime, delta, true);
+        }
     }
   }
 
