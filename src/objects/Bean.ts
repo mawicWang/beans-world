@@ -7,7 +7,8 @@ export enum MoveState {
   CHARGING,
   BURSTING,
   DECELERATING,
-  SEEKING_MATE
+  SEEKING_MATE,
+  MOVING_TO_PARTNER
 }
 
 export default class Bean extends Phaser.GameObjects.Container {
@@ -20,7 +21,10 @@ export default class Bean extends Phaser.GameObjects.Container {
   private stateTimer: number = 0;
   private moveTarget: Phaser.Math.Vector2 | null = null;
   private facingAngle: number = 0;
-  private isSeekingMate: boolean = false;
+  public isSeekingMate: boolean = false;
+
+  // Reproduction Locking
+  public lockedPartner: Bean | null = null;
 
   // Physics (Tail Spring)
   private tailPos: Phaser.Math.Vector2;
@@ -120,6 +124,7 @@ export default class Bean extends Phaser.GameObjects.Container {
   private setIdle() {
     this.moveState = MoveState.IDLE;
     this.isSeekingMate = false;
+    this.lockedPartner = null;
     this.stateTimer = Phaser.Math.Between(this.IDLE_DURATION_MIN, this.IDLE_DURATION_MAX);
     this.moveTarget = null;
   }
@@ -159,6 +164,12 @@ export default class Bean extends Phaser.GameObjects.Container {
       });
   }
 
+  public lockPartner(other: Bean) {
+      this.lockedPartner = other;
+      this.moveState = MoveState.MOVING_TO_PARTNER;
+      this.isSeekingMate = true; // Technically still seeking, but specifically targeting
+  }
+
   update(_time: number, delta: number, render: boolean = true) {
     const body = this.body as Phaser.Physics.Arcade.Body;
     if (!body) return; // Safety check in case update is called before physics setup
@@ -195,29 +206,11 @@ export default class Bean extends Phaser.GameObjects.Container {
     // Reproduction Trigger Check (Only if Adult, Idle, and High Satiety)
     if (this.isAdult && this.satiety > 60 && this.reproCooldown <= 0 && this.moveState === MoveState.IDLE) {
          // Probability check based on satiety
-         // "The higher the satiety, the more likely to enter the state"
-         // Let's use a quadratic curve for probability per second.
-         // (satiety - 60) ranges from 0 to 40.
-         // (40^2) = 1600.
-         // Max chance at 100 satiety? Let's say 10% per second?
-         // 0.1 / 60fps = 0.0016 per frame.
-         // k * 1600 = 0.0016 => k = 0.000001
-
-         // Probability check based on satiety
-         // "The higher the satiety, the more likely to enter the state"
-         // Base chance calculated per SECOND.
-         // (satiety - 60) ranges from 0 to 40.
-         // (40^2) = 1600.
-         // We want reasonable probability.
-         // At 100 satiety (1600 score), let's say 20% chance per second.
-         // 1600 * k = 0.20 -> k = 0.000125
-
          const baseChance = Math.pow((this.satiety - 60), 2); // 0 to 1600
          const k = 0.000125;
          const probabilityPerSecond = baseChance * k;
 
          // Convert to per-frame probability based on delta (ms)
-         // prob = 1 - (1 - probPerSec)^(delta/1000) ~ probPerSec * (delta/1000) for small probs
          const frameProbability = probabilityPerSecond * (delta / 1000);
 
          if (Math.random() < frameProbability) {
@@ -226,8 +219,17 @@ export default class Bean extends Phaser.GameObjects.Container {
          }
     }
 
-    // If we dropped below 60, stop seeking
+    // If we dropped below 60, stop seeking/courting
+    // However, if we are MOVING_TO_PARTNER, maybe we should be more committed?
+    // Let's stick to the rule: if hungry, abandon love.
     if (this.isSeekingMate && this.satiety < 60) {
+        // If we had a partner, they need to know we broke up
+        if (this.lockedPartner) {
+             // We can't easily notify them here without circular dependency mess or event bus,
+             // but the partner will notice in their update loop that we are no longer available/seeking.
+             this.lockedPartner = null;
+        }
+
         this.isSeekingMate = false;
         this.setIdle();
     }
@@ -247,15 +249,23 @@ export default class Bean extends Phaser.GameObjects.Container {
         break;
 
       case MoveState.SEEKING_MATE:
-        // Continuously update target to nearest mate
+        // Try to find a mate who is also seeking and not locked
         const mate = this.findClosestMate();
 
         if (mate) {
-             this.moveTarget = new Phaser.Math.Vector2(mate.x, mate.y);
-             const targetAngle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
-             this.facingAngle = targetAngle;
-             // IMPORTANT: When seeking mate, we DO NOT apply separation force in the same way
-             // because we WANT to collide/merge.
+             // Check if we should lock
+             // Distance threshold to commit? Let's say if within vision
+             const dist = Phaser.Math.Distance.Between(this.x, this.y, mate.x, mate.y);
+             if (dist < this.VISION_RADIUS) {
+                 // Lock!
+                 this.lockPartner(mate);
+                 mate.lockPartner(this);
+             } else {
+                 // Just move towards them
+                 this.moveTarget = new Phaser.Math.Vector2(mate.x, mate.y);
+                 const targetAngle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
+                 this.facingAngle = targetAngle;
+             }
         } else {
              // No mate found, look around randomly
              if (!this.moveTarget || (this.moveTarget && this.hasReachedTarget())) {
@@ -271,10 +281,38 @@ export default class Bean extends Phaser.GameObjects.Container {
         // Burst movement
         if (this.stateTimer <= 0) {
           this.burst();
-          // If seeking mate, burst more frequently?
           this.stateTimer = this.CHARGE_DURATION;
         }
         break;
+
+      case MoveState.MOVING_TO_PARTNER:
+          // Check if partner is still valid
+          if (!this.lockedPartner || !this.lockedPartner.scene || this.lockedPartner.satiety <= 0 || !this.lockedPartner.isSeekingMate) {
+              // Partner died or lost interest
+              this.lockedPartner = null;
+              this.moveState = MoveState.SEEKING_MATE;
+              break;
+          }
+
+          // Verify partner is still locked to us (handle race conditions where they might have unlocked)
+          if (this.lockedPartner.lockedPartner !== this) {
+               // They cheated on us or reset
+               this.lockedPartner = null;
+               this.moveState = MoveState.SEEKING_MATE;
+               break;
+          }
+
+          // Move directly to partner
+          this.moveTarget = new Phaser.Math.Vector2(this.lockedPartner.x, this.lockedPartner.y);
+          const targetAngle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
+          this.facingAngle = targetAngle;
+
+          // Burst movement
+          if (this.stateTimer <= 0) {
+            this.burst();
+            this.stateTimer = this.CHARGE_DURATION;
+          }
+          break;
 
       case MoveState.CHARGING:
         // Orient towards target while charging, with separation from other beans
@@ -310,16 +348,22 @@ export default class Bean extends Phaser.GameObjects.Container {
         const dist = this.moveTarget ? Phaser.Math.Distance.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y) : 0;
 
         // If we are far from the target, start the next hop before stopping completely
-        // to create a smoother, continuous movement.
         if (this.moveTarget && dist > 100 && body.speed < 150) {
-          this.moveState = this.isSeekingMate ? MoveState.SEEKING_MATE : MoveState.CHARGING;
-          this.stateTimer = this.CHARGE_DURATION;
+            if (this.lockedPartner) {
+                 this.moveState = MoveState.MOVING_TO_PARTNER;
+            } else {
+                 this.moveState = this.isSeekingMate ? MoveState.SEEKING_MATE : MoveState.CHARGING;
+            }
+            this.stateTimer = this.CHARGE_DURATION;
         } else if (body.speed < 10) {
            body.setVelocity(0,0);
 
-           if (this.isSeekingMate) {
+           if (this.lockedPartner) {
+               this.moveState = MoveState.MOVING_TO_PARTNER;
+               this.stateTimer = 0;
+           } else if (this.isSeekingMate) {
                this.moveState = MoveState.SEEKING_MATE;
-               this.stateTimer = 0; // Ready to burst/seek again immediately or soon
+               this.stateTimer = 0;
            } else {
                this.setIdle();
            }
@@ -328,9 +372,6 @@ export default class Bean extends Phaser.GameObjects.Container {
     }
 
     // 2. Tail Physics (Elastic Rope System)
-    // We need to use delta for time-correction.
-    // Assuming the original stiffness/damping were tuned for 60fps (16.6ms),
-    // we normalize delta to "frames".
     const dt = delta / 16.66; // 1.0 at 60fps
 
     // Head position (World)
@@ -354,7 +395,6 @@ export default class Bean extends Phaser.GameObjects.Container {
         ay = (dy / currentDist) * force;
     } else {
         // Force back to center if inside slack (though slack is now 0)
-        // This ensures it centers perfectly
          const force = currentDist * this.SPRING_STIFFNESS;
          if (currentDist > 0) {
              ax = (dx / currentDist) * force;
@@ -367,7 +407,6 @@ export default class Bean extends Phaser.GameObjects.Container {
     this.tailVelocity.y += ay * dt;
 
     // Damping (applied per frame, so we power it by dt)
-    // v *= damping^dt
     this.tailVelocity.x *= Math.pow(this.SPRING_DAMPING, dt);
     this.tailVelocity.y *= Math.pow(this.SPRING_DAMPING, dt);
 
@@ -377,12 +416,8 @@ export default class Bean extends Phaser.GameObjects.Container {
 
     // 3. Render
     if (render) {
-        // Convert World Tail to Local Tail relative to Container
-        // This allows us to draw using local coordinates where (0,0) is always the Head
-        // Since the container is NOT rotated, this is just a translation.
         const localTail = new Phaser.Math.Vector2();
         this.getLocalPoint(this.tailPos.x, this.tailPos.y, localTail);
-
         this.drawJelly(localTail);
     }
   }
@@ -391,25 +426,22 @@ export default class Bean extends Phaser.GameObjects.Container {
     const separationRadius = 60; // How close is "too close"
     const separationForce = new Phaser.Math.Vector2(0, 0);
 
-    // Cast scene to GameScene to access getBeans
-    // We can assume scene is GameScene based on usage
     const scene = this.scene as unknown as GameScene;
-    if (typeof scene.getBeans !== 'function') return separationForce; // Safety check
+    if (typeof scene.getBeans !== 'function') return separationForce;
 
     const beans = scene.getBeans();
     let count = 0;
 
     for (const other of beans) {
       if (other === this) continue;
+      // Do not separate from locked partner
+      if (other === this.lockedPartner) continue;
 
       const dist = Phaser.Math.Distance.Between(this.x, this.y, other.x, other.y);
 
       if (dist < separationRadius && dist > 0) {
-        // Vector away from other
         const diff = new Phaser.Math.Vector2(this.x - other.x, this.y - other.y);
         diff.normalize();
-
-        // Weight by distance (closer = stronger)
         diff.scale(1.0 / dist);
 
         separationForce.add(diff);
@@ -418,7 +450,6 @@ export default class Bean extends Phaser.GameObjects.Container {
     }
 
     if (count > 0) {
-      // Average
       separationForce.scale(1.0 / count);
       separationForce.normalize();
     }
@@ -434,7 +465,10 @@ export default class Bean extends Phaser.GameObjects.Container {
 
       for (const other of beans) {
           if (other === this) continue;
-          if (other.moveState !== MoveState.SEEKING_MATE) continue;
+          if (other.moveState !== MoveState.SEEKING_MATE && other.moveState !== MoveState.MOVING_TO_PARTNER) continue;
+
+          // If other is already locked to someone else, ignore them
+          if (other.lockedPartner && other.lockedPartner !== this) continue;
 
           const dist = Phaser.Math.Distance.Between(this.x, this.y, other.x, other.y);
           if (dist < closestDist) {
@@ -448,7 +482,7 @@ export default class Bean extends Phaser.GameObjects.Container {
   private hasReachedTarget(): boolean {
       if (!this.moveTarget) return true;
       const dist = Phaser.Math.Distance.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
-      return dist < 20; // Tolerance for reaching target
+      return dist < 20;
   }
 
   private pickTarget() {
@@ -461,7 +495,6 @@ export default class Bean extends Phaser.GameObjects.Container {
         let closestDist = this.VISION_RADIUS;
 
         for (const food of foods) {
-            // Check if food is still valid/active
             if (!food || !food.scene) continue;
 
             const dist = Phaser.Math.Distance.Between(this.x, this.y, food.x, food.y);
@@ -481,11 +514,8 @@ export default class Bean extends Phaser.GameObjects.Container {
   }
 
   public eat(food: Food) {
-      // Only eat if not full
       if (this.isFull) return;
-
       this.satiety += food.satiety;
-      // Remove food
       const scene = this.scene as unknown as GameScene;
       scene.removeFood(food);
   }
@@ -493,11 +523,8 @@ export default class Bean extends Phaser.GameObjects.Container {
   private burst() {
     if (!this.moveTarget) return;
     const body = this.body as Phaser.Physics.Arcade.Body;
-
-    // Calculate vector
     const angle = this.facingAngle;
     this.scene.physics.velocityFromRotation(angle, this.BURST_SPEED, body.velocity);
-
     this.playMoveSound();
     this.moveState = MoveState.BURSTING;
   }
@@ -505,38 +532,23 @@ export default class Bean extends Phaser.GameObjects.Container {
   private drawJelly(tailOffset: Phaser.Math.Vector2) {
     this.bodyGraphics.clear();
 
-    // Calculate geometry
     let dist = tailOffset.length();
-
-    // Snap to 0 if very small to ensure perfect circle
     if (dist < 0.5) dist = 0;
 
-    // Deformation: As distance increases, Head grows slightly, Tail shrinks
-    // Limit dist to avoid breaking geometry
-    const stretchFactor = Math.min(dist, 100) / 100; // 0 to 1
+    const stretchFactor = Math.min(dist, 100) / 100;
 
     const headRadius = this.currentRadius * (1 + stretchFactor * 0.2);
-    const tailRadius = this.currentRadius * (1 - stretchFactor * 0.7); // Tail gets smaller
+    const tailRadius = this.currentRadius * (1 - stretchFactor * 0.7);
 
-    // Head is always at (0,0)
     const hx = 0;
     const hy = 0;
-
-    // Tail is at (tailOffset.x, tailOffset.y)
     const tx = tailOffset.x;
     const ty = tailOffset.y;
 
-    // Colors
     this.bodyGraphics.fillStyle(this.mainColor, 0.9);
-    this.bodyGraphics.lineStyle(2, 0x1a5f8a, 1.0); // Darker border
+    this.bodyGraphics.lineStyle(2, 0x1a5f8a, 1.0);
 
-    // Draw connected shape
-    // Get angle from Tail to Head for hull calculation
     const angle = Phaser.Math.Angle.Between(tx, ty, hx, hy);
-
-    // Calculate tangent points
-    // We want a convex hull around two circles.
-    // For unequal radii, the offset angle is acos((r1 - r2) / d).
 
     let offsetAngle = Math.PI / 2;
     const rDiff = headRadius - tailRadius;
@@ -550,24 +562,24 @@ export default class Bean extends Phaser.GameObjects.Container {
     const t1x = tx + Math.cos(angle + offsetAngle) * tailRadius;
     const t1y = ty + Math.sin(angle + offsetAngle) * tailRadius;
 
-    // Draw Head
     this.bodyGraphics.beginPath();
     this.bodyGraphics.arc(hx, hy, headRadius, angle - offsetAngle, angle + offsetAngle, false);
-    // Line to Tail 1
     this.bodyGraphics.lineTo(t1x, t1y);
-    // Tail Arc
     this.bodyGraphics.arc(tx, ty, tailRadius, angle + offsetAngle, angle - offsetAngle, false);
-    // Line back to Head 2
     this.bodyGraphics.lineTo(h2x, h2y);
     this.bodyGraphics.closePath();
 
     this.bodyGraphics.fillPath();
     this.bodyGraphics.strokePath();
 
-    // Direction Indicator (Black Dot)
-    // Position it based on facingAngle
+    // Draw hearts if courting/locked
+    if (this.lockedPartner || (this.moveState === MoveState.SEEKING_MATE && this.isSeekingMate)) {
+         this.bodyGraphics.fillStyle(0xff69b4, 1); // Hot pink
+         this.bodyGraphics.fillCircle(0, -headRadius - 5, 3);
+    }
+
     const indicatorSize = 3;
-    const indicatorOffset = headRadius * 0.6; // Position it forward relative to head center
+    const indicatorOffset = headRadius * 0.6;
 
     const ix = Math.cos(this.facingAngle) * indicatorOffset;
     const iy = Math.sin(this.facingAngle) * indicatorOffset;
@@ -575,14 +587,11 @@ export default class Bean extends Phaser.GameObjects.Container {
     this.bodyGraphics.fillStyle(0x000000, 0.8);
     this.bodyGraphics.fillCircle(ix, iy, indicatorSize);
 
-    // Highlight (Shiny jelly)
-    // Keep highlight static (top-left) to simulate fixed light source
     this.bodyGraphics.fillStyle(0xffffff, 0.4);
     this.bodyGraphics.fillCircle(-headRadius*0.3, -headRadius*0.3, headRadius*0.25);
   }
 
   private playMoveSound() {
-    // Simple synthesized "pop" sound using Web Audio API
     const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioContext) return;
 
@@ -597,7 +606,6 @@ export default class Bean extends Phaser.GameObjects.Container {
     gain.connect(ctx.destination);
 
     osc.type = 'sine';
-    // Frequency sweep for a cute "bloop" sound
     const now = ctx.currentTime;
     osc.frequency.setValueAtTime(300, now);
     osc.frequency.exponentialRampToValueAtTime(800, now + 0.1);

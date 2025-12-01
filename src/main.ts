@@ -1,6 +1,12 @@
 import Phaser from 'phaser';
 import GameScene from './scenes/GameScene';
 import UIScene from './scenes/UIScene';
+import DevScene from './scenes/DevScene';
+
+// Use a simple flag or URL param to switch modes
+const useDevScene = true; // Hardcode for this task, or use urlParams.has('dev');
+
+const sceneList = useDevScene ? [DevScene] : [GameScene, UIScene];
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -8,7 +14,7 @@ const config: Phaser.Types.Core.GameConfig = {
   height: window.innerHeight,
   parent: 'app',
   backgroundColor: '#D3D3D3', // Light gray background
-  scene: [GameScene, UIScene],
+  scene: sceneList,
   physics: {
     default: 'arcade',
     arcade: {

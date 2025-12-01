@@ -254,9 +254,18 @@ export default class GameScene extends Phaser.Scene {
       // Check if both are seeking mate
       // Note: Overlap runs every frame they touch, so we need to be careful to only trigger once.
       // Checking 'active' is the key.
-      if (bean1.active && bean2.active &&
-          bean1.moveState === MoveState.SEEKING_MATE &&
-          bean2.moveState === MoveState.SEEKING_MATE) {
+      if (!bean1.active || !bean2.active) return;
+
+      const readyStates = [MoveState.SEEKING_MATE, MoveState.MOVING_TO_PARTNER];
+
+      const b1Ready = readyStates.includes(bean1.moveState);
+      const b2Ready = readyStates.includes(bean2.moveState);
+
+      if (b1Ready && b2Ready) {
+          // Check Locking Compatibility
+          // If a bean has a specific partner locked, it should ONLY reproduce with that partner.
+          if (bean1.lockedPartner && bean1.lockedPartner !== bean2) return;
+          if (bean2.lockedPartner && bean2.lockedPartner !== bean1) return;
 
           console.log(`Reproduction triggered between beans at ${bean1.x},${bean1.y}`);
           this.startReproduction(bean1, bean2);
