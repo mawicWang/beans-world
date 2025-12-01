@@ -93,8 +93,14 @@ export default class DevScene extends Phaser.Scene {
       const color1 = parent1.getMainColor();
       const color2 = parent2.getMainColor();
 
+      const parentsAttributes = {
+          strength: [parent1.strength, parent2.strength],
+          speed: [parent1.speed, parent2.speed],
+          constitution: [parent1.constitution, parent2.constitution]
+      };
+
       console.log('Spawning Cocoon at', midX, midY);
-      const cocoon = new Cocoon(this, midX, midY, totalSatiety, color1, color2);
+      const cocoon = new Cocoon(this, midX, midY, totalSatiety, color1, color2, parentsAttributes);
       this.add.existing(cocoon);
 
       this.removeBean(parent1);

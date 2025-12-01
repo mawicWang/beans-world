@@ -2,8 +2,9 @@ import Phaser from 'phaser';
 
 export default class Food extends Phaser.GameObjects.Arc {
     public satiety: number;
+    public attributeBonus?: { type: 'strength' | 'speed' | 'constitution', value: number };
 
-    constructor(scene: Phaser.Scene, x: number, y: number, satiety: number) {
+    constructor(scene: Phaser.Scene, x: number, y: number, satiety: number, attributeBonus?: { type: 'strength' | 'speed' | 'constitution', value: number }) {
         let radius = 5;
         let color = 0xffffff;
 
@@ -30,6 +31,12 @@ export default class Food extends Phaser.GameObjects.Arc {
         this.setStrokeStyle(1, 0x000000, 0.5);
 
         this.satiety = satiety;
+        this.attributeBonus = attributeBonus;
+
+        if (this.attributeBonus) {
+            // Visual indicator for special food
+            this.setStrokeStyle(2, 0xffffff, 1.0);
+        }
     }
 
     setupPhysics() {
