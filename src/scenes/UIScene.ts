@@ -90,23 +90,12 @@ export default class UIScene extends Phaser.Scene {
   private createToggleStatsButton() {
     this.toggleStatsButtonContainer = this.add.container(0, 0);
 
-    // Initialize registry if not present
-    if (this.registry.get('beanStatsVisible') === undefined) {
-      this.registry.set('beanStatsVisible', false);
-    }
-    this.statsVisible = this.registry.get('beanStatsVisible');
-
     const width = 120;
     const height = 50;
     const bg = this.add.rectangle(0, 0, width, height, 0x2196F3); // Blue button
-
-    // Set initial visual state based on registry
-    bg.setFillStyle(this.statsVisible ? 0x1976D2 : 0x2196F3);
-
     bg.setInteractive({ useHandCursor: true })
       .on('pointerdown', () => {
           this.statsVisible = !this.statsVisible;
-          this.registry.set('beanStatsVisible', this.statsVisible);
           this.game.events.emit('TOGGLE_BEAN_STATS', this.statsVisible);
           bg.setFillStyle(this.statsVisible ? 0x1976D2 : 0x2196F3);
       })
