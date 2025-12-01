@@ -25,7 +25,6 @@ export default class GameScene extends Phaser.Scene {
   create() {
     // Create physics group for beans
     this.beanGroup = this.physics.add.group();
-    this.physics.add.collider(this.beanGroup, this.beanGroup);
 
     // Create physics group for food
     this.foodGroup = this.physics.add.group();
@@ -37,8 +36,14 @@ export default class GameScene extends Phaser.Scene {
         bean.eat(food);
     });
 
-    // Collider for physical separation
-    this.physics.add.collider(this.beanGroup, this.beanGroup);
+    // Collider for physical separation (with filter to allow mating pairs to pass through)
+    this.physics.add.collider(
+        this.beanGroup,
+        this.beanGroup,
+        undefined,
+        this.checkBeanCollision,
+        this
+    );
 
     // Overlap for Reproduction Trigger (avoids physics solver interference)
     this.physics.add.overlap(this.beanGroup, this.beanGroup, (obj1, obj2) => {
@@ -248,6 +253,30 @@ export default class GameScene extends Phaser.Scene {
 
       this.registry.set('beanCount', this.beans.length);
       this.game.events.emit('UPDATE_BEAN_COUNT', this.beans.length);
+  }
+
+  private checkBeanCollision(obj1: any, obj2: any): boolean {
+    const b1 = obj1 as Bean;
+    const b2 = obj2 as Bean;
+
+    if (!b1.active || !b2.active) return true;
+
+    const readyStates = [MoveState.SEEKING_MATE, MoveState.MOVING_TO_PARTNER];
+    const b1Ready = readyStates.includes(b1.moveState);
+    const b2Ready = readyStates.includes(b2.moveState);
+
+    // If both are ready to mate
+    if (b1Ready && b2Ready) {
+        // Check Locking Compatibility
+        // If they are locked to specific partners, they must be locked to each other
+        if (b1.lockedPartner && b1.lockedPartner !== b2) return true; // Collide with others
+        if (b2.lockedPartner && b2.lockedPartner !== b1) return true; // Collide with others
+
+        // They are compatible partners. Return false to DISABLE physics collision (allow overlap).
+        return false;
+    }
+
+    return true; // Default physics behavior (collide/bounce)
   }
 
   private checkReproductionOverlap(bean1: Bean, bean2: Bean) {
