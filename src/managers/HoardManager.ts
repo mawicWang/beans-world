@@ -42,6 +42,29 @@ export default class HoardManager {
     return this.hoards.get(id);
   }
 
+  public pruneEmptyHoards(beans: { hoardId: string | null }[]) {
+    // 1. Collect all active hoard IDs
+    const activeHoardIds = new Set<string>();
+    for (const bean of beans) {
+      if (bean.hoardId) {
+        activeHoardIds.add(bean.hoardId);
+      }
+    }
+
+    // 2. Identify hoards to remove
+    const hoardsToRemove: string[] = [];
+    for (const id of this.hoards.keys()) {
+      if (!activeHoardIds.has(id)) {
+        hoardsToRemove.push(id);
+      }
+    }
+
+    // 3. Delete them
+    for (const id of hoardsToRemove) {
+      this.hoards.delete(id);
+    }
+  }
+
   public update() {
     this.graphics.clear();
 
