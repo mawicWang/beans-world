@@ -25,6 +25,10 @@ export default class Bean extends Phaser.GameObjects.Container {
   private hoardLocation: Phaser.Math.Vector2 | null = null;
   private carriedFoodData: { satiety: number, attributeBonus?: { type: 'strength' | 'speed' | 'constitution', value: number } } | null = null;
 
+  public getHoardLocation(): Phaser.Math.Vector2 | null {
+      return this.hoardLocation;
+  }
+
   // Physics (Head)
   public moveState: MoveState = MoveState.IDLE;
   private previousState: MoveState = MoveState.IDLE; // To restore state after deceleration
@@ -88,9 +92,14 @@ export default class Bean extends Phaser.GameObjects.Container {
       startSatiety: number = 80,
       startAdult: boolean = true,
       showStats: boolean = false,
-      attributes: { strength?: number, speed?: number, constitution?: number } = {}
+      attributes: { strength?: number, speed?: number, constitution?: number } = {},
+      hoardLocation: Phaser.Math.Vector2 | null = null
   ) {
     super(scene, x, y);
+
+    if (hoardLocation) {
+        this.hoardLocation = new Phaser.Math.Vector2(hoardLocation.x, hoardLocation.y);
+    }
 
     this.satiety = startSatiety;
     this.isAdult = startAdult;
@@ -395,9 +404,16 @@ export default class Bean extends Phaser.GameObjects.Container {
 
            // Check distance to hoard if we have one
            if (this.hoardLocation) {
+               // If we are strictly guarding, we should check distance from hoard, not just current position
+               // The logic here is correct: checks distance from SELF to HOARD.
+               // However, we want to ensure we don't chase too far.
                const distToHoard = Phaser.Math.Distance.Between(this.x, this.y, this.hoardLocation.x, this.hoardLocation.y);
                if (distToHoard > this.MAX_CHASE_DIST) {
+                   // Abandon chase
+                   this.moveTarget = null;
+                   // Return to hoard
                    this.setIdle();
+                   // Or force move to hoard? setIdle will eventually trigger pickRandomTarget which sends to hoard.
                    break;
                }
            }
@@ -435,6 +451,14 @@ export default class Bean extends Phaser.GameObjects.Container {
            break;
 
       case MoveState.SEEKING_MATE:
+        // 0. Priority: Defend against intruders even while seeking mate
+        const matingIntruder = this.findIntruder();
+        if (matingIntruder) {
+             this.moveState = MoveState.CHASING_ENEMY;
+             this.moveTarget = new Phaser.Math.Vector2(matingIntruder.x, matingIntruder.y);
+             break;
+        }
+
         // Try to find a mate who is also seeking and not locked
         const mate = this.findClosestMate();
 
@@ -451,23 +475,56 @@ export default class Bean extends Phaser.GameObjects.Container {
                  this.moveTarget = new Phaser.Math.Vector2(mate.x, mate.y);
                  const targetAngle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
                  this.facingAngle = targetAngle;
+
+                 // Burst movement (only if we have a target)
+                 if (this.stateTimer <= 0) {
+                    this.burst();
+                    this.stateTimer = this.CHARGE_DURATION;
+                 }
              }
         } else {
-             // No mate found, look around randomly
-             if (!this.moveTarget || (this.moveTarget && this.hasReachedTarget())) {
-                 this.pickRandomTarget();
-             }
+             // No mate found.
+             if (this.isGuarding) {
+                 // If guarding, DO NOT roam map. Wait/Patrol near hoard.
+                 if (this.hoardLocation) {
+                     // Stay near hoard (Patrol logic)
+                      if (!this.moveTarget || this.hasReachedTarget()) {
+                          const angle = Math.random() * Math.PI * 2;
+                          const dist = Math.random() * (this.hoardRadius * 0.5); // Tight patrol
+                          this.moveTarget = new Phaser.Math.Vector2(
+                              this.hoardLocation.x + Math.cos(angle) * dist,
+                              this.hoardLocation.y + Math.sin(angle) * dist
+                          );
+                      }
 
-             if (this.moveTarget) {
-                 const targetAngle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
-                 this.facingAngle = targetAngle;
-             }
-        }
+                      const targetAngle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
+                      this.facingAngle = targetAngle;
 
-        // Burst movement
-        if (this.stateTimer <= 0) {
-          this.burst();
-          this.stateTimer = this.CHARGE_DURATION;
+                      if (this.stateTimer <= 0) {
+                          this.burst();
+                          this.stateTimer = this.CHARGE_DURATION * 2; // Move slower/less often
+                      }
+                 } else {
+                     // Fallback if guard has no hoard (shouldn't happen often)
+                     this.setIdle();
+                 }
+             } else {
+                 // Normal roaming for non-guards
+                 if (!this.moveTarget || (this.moveTarget && this.hasReachedTarget())) {
+                     this.pickRandomTarget();
+                 }
+
+                 if (this.moveTarget) {
+                     const targetAngle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
+                     this.facingAngle = targetAngle;
+                 }
+
+                 // Burst movement
+                 if (this.stateTimer <= 0) {
+                    this.burst();
+                    this.stateTimer = this.CHARGE_DURATION;
+                 }
+             }
         }
         break;
 
@@ -765,10 +822,28 @@ export default class Bean extends Phaser.GameObjects.Container {
     let foodTarget: Phaser.GameObjects.GameObject | null = null;
     if (!this.isFull) {
         const foods = scene.getFoods();
-        let closestDist = this.VISION_RADIUS;
+        // If starving, look further
+        let searchRadius = this.satiety < 20 ? 1000 : this.VISION_RADIUS;
+        let closestDist = searchRadius;
+
+        // Constraint for guards: if guarding and not starving, only look near hoard
+        // let searchOrigin = new Phaser.Math.Vector2(this.x, this.y);
+
+        if (this.isGuarding && this.hoardLocation && this.satiety > 20) {
+            // searchOrigin = this.hoardLocation;
+            // Patrol radius + bit more
+            searchRadius = this.hoardRadius * 1.5;
+            closestDist = searchRadius;
+        }
 
         for (const food of foods) {
             if (!food || !food.scene) continue;
+
+            // If limited to hoard area, check that first
+            if (this.isGuarding && this.hoardLocation && this.satiety > 20) {
+                 const distToHoard = Phaser.Math.Distance.Between(this.hoardLocation.x, this.hoardLocation.y, food.x, food.y);
+                 if (distToHoard > searchRadius) continue;
+            }
 
             const dist = Phaser.Math.Distance.Between(this.x, this.y, food.x, food.y);
             if (dist < closestDist) {
@@ -782,6 +857,10 @@ export default class Bean extends Phaser.GameObjects.Container {
         const food = foodTarget as Food;
         this.moveTarget = new Phaser.Math.Vector2(food.x, food.y);
     } else {
+        // Only pick random target if we are NOT guarding (guards should patrol/return to hoard in IDLE/GUARDING state, not roam randomly)
+        // However, if we are here, it means we are likely in IDLE state trying to decide what to do.
+        // If Guarding, pickRandomTarget actually checks "if (this.hoardLocation)..." internally, let's verify.
+        // Yes, pickRandomTarget handles returning to hoard if far.
         this.pickRandomTarget();
     }
   }
