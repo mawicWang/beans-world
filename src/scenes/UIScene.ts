@@ -4,8 +4,10 @@ export default class UIScene extends Phaser.Scene {
   private beanCountText!: Phaser.GameObjects.Text;
   private addButtonContainer!: Phaser.GameObjects.Container;
   private toggleStatsButtonContainer!: Phaser.GameObjects.Container;
+  private toggleLinesButtonContainer!: Phaser.GameObjects.Container;
   private speedControlsContainer!: Phaser.GameObjects.Container;
   private statsVisible: boolean = false;
+  private linesVisible: boolean = false;
 
   private isPaused: boolean = false;
   private speedLevel: number = 0; // 0=1x, 1=5x, 2=20x, 3=50x
@@ -28,6 +30,7 @@ export default class UIScene extends Phaser.Scene {
     // Add Buttons
     this.createAddButton();
     this.createToggleStatsButton();
+    this.createToggleLinesButton();
     this.createSpeedControls();
 
     // Listen for updates
@@ -112,6 +115,31 @@ export default class UIScene extends Phaser.Scene {
     this.toggleStatsButtonContainer.add([bg, text]);
   }
 
+  private createToggleLinesButton() {
+    this.toggleLinesButtonContainer = this.add.container(0, 0);
+
+    const width = 120;
+    const height = 50;
+    const bg = this.add.rectangle(0, 0, width, height, 0x9C27B0); // Purple button
+    bg.setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => {
+          this.linesVisible = !this.linesVisible;
+          this.game.events.emit('TOGGLE_HOARD_LINES', this.linesVisible);
+          bg.setFillStyle(this.linesVisible ? 0x7B1FA2 : 0x9C27B0);
+      })
+      .on('pointerover', () => bg.setFillStyle(this.linesVisible ? 0x6A1B9A : 0xAB47BC))
+      .on('pointerout', () => bg.setFillStyle(this.linesVisible ? 0x7B1FA2 : 0x9C27B0));
+
+    const text = this.add.text(0, 0, 'Lines', {
+        fontSize: '18px',
+        color: '#ffffff',
+        fontStyle: 'bold'
+    });
+    text.setOrigin(0.5);
+
+    this.toggleLinesButtonContainer.add([bg, text]);
+  }
+
   private createSpeedControls() {
     this.speedControlsContainer = this.add.container(0, 0);
 
@@ -179,8 +207,11 @@ export default class UIScene extends Phaser.Scene {
     if (this.toggleStatsButtonContainer) {
         this.toggleStatsButtonContainer.setPosition(gameSize.width - 80, 105);
     }
+    if (this.toggleLinesButtonContainer) {
+        this.toggleLinesButtonContainer.setPosition(gameSize.width - 80, 165);
+    }
     if (this.speedControlsContainer) {
-        this.speedControlsContainer.setPosition(gameSize.width - 80, 165);
+        this.speedControlsContainer.setPosition(gameSize.width - 80, 225);
     }
   }
 }
