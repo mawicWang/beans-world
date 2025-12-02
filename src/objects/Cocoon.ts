@@ -8,6 +8,7 @@ export default class Cocoon extends Phaser.GameObjects.Container {
   private mainColor: number;
   private baseRadius: number = 13; // Slightly smaller than Adult Bean (15)
   private parentsAttributes: { strength: number[], speed: number[], constitution: number[] };
+  private inheritedHoardLocation: Phaser.Math.Vector2 | null;
 
   constructor(
       scene: Phaser.Scene,
@@ -16,12 +17,14 @@ export default class Cocoon extends Phaser.GameObjects.Container {
       totalSatiety: number,
       color1: number,
       color2: number,
-      parentsAttributes: { strength: number[], speed: number[], constitution: number[] }
+      parentsAttributes: { strength: number[], speed: number[], constitution: number[] },
+      inheritedHoardLocation: Phaser.Math.Vector2 | null = null
     ) {
     super(scene, x, y);
 
     this.totalSatiety = totalSatiety;
     this.parentsAttributes = parentsAttributes;
+    this.inheritedHoardLocation = inheritedHoardLocation;
 
     // Mix the colors of the parents
     this.mainColor = Phaser.Display.Color.Interpolate.ColorWithColor(
@@ -128,7 +131,7 @@ export default class Cocoon extends Phaser.GameObjects.Container {
 
         // Spawn child: isAdult = false
         if (scene.spawnBean) {
-            scene.spawnBean(spawnX, spawnY, satietyPerChild, false, newAttributes);
+            scene.spawnBean(spawnX, spawnY, satietyPerChild, false, newAttributes, this.inheritedHoardLocation);
         }
     }
 

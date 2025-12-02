@@ -135,10 +135,10 @@ export default class GameScene extends Phaser.Scene {
     this.spawnBean(pointer.x, pointer.y);
   }
 
-  spawnBean(x?: number, y?: number, startSatiety: number = 80, isAdult: boolean = true, attributes: { strength?: number, speed?: number, constitution?: number } = {}) {
+  spawnBean(x?: number, y?: number, startSatiety: number = 80, isAdult: boolean = true, attributes: { strength?: number, speed?: number, constitution?: number } = {}, hoardLocation: Phaser.Math.Vector2 | null = null) {
     const spawnX = x ?? Phaser.Math.Between(50, this.scale.width - 50);
     const spawnY = y ?? Phaser.Math.Between(50, this.scale.height - 50);
-    const bean = new Bean(this, spawnX, spawnY, startSatiety, isAdult, this.areStatsVisible, attributes);
+    const bean = new Bean(this, spawnX, spawnY, startSatiety, isAdult, this.areStatsVisible, attributes, hoardLocation);
     this.add.existing(bean);
     this.beans.push(bean);
     this.beanGroup.add(bean);
@@ -464,8 +464,29 @@ export default class GameScene extends Phaser.Scene {
           constitution: [parent1.constitution, parent2.constitution]
       };
 
+      // Calculate Merged Hoard Location
+      let mergedHoard: Phaser.Math.Vector2 | null = null;
+      const hoard1 = parent1.getHoardLocation();
+      const hoard2 = parent2.getHoardLocation();
+
+      if (hoard1 && hoard2) {
+          // Average of both
+          mergedHoard = new Phaser.Math.Vector2(
+              (hoard1.x + hoard2.x) / 2,
+              (hoard1.y + hoard2.y) / 2
+          );
+      } else if (hoard1) {
+          mergedHoard = new Phaser.Math.Vector2(hoard1.x, hoard1.y);
+      } else if (hoard2) {
+          mergedHoard = new Phaser.Math.Vector2(hoard2.x, hoard2.y);
+      } else {
+          // Create new hoard at cocoon location if neither had one (optional, or wait for them to find food)
+          // For now, let's leave it null and let them establish it when they find excess food
+          mergedHoard = null;
+      }
+
       // Create Cocoon
-      const cocoon = new Cocoon(this, midX, midY, totalSatiety, color1, color2, parentsAttributes);
+      const cocoon = new Cocoon(this, midX, midY, totalSatiety, color1, color2, parentsAttributes, mergedHoard);
       this.add.existing(cocoon);
 
       // Remove parents
