@@ -7,6 +7,7 @@ export default class UIScene extends Phaser.Scene {
   private addButtonContainer!: Phaser.GameObjects.Container;
   private toggleStatsButtonContainer!: Phaser.GameObjects.Container;
   private toggleLinesButtonContainer!: Phaser.GameObjects.Container;
+  private restartButtonContainer!: Phaser.GameObjects.Container;
   private speedControlsContainer!: Phaser.GameObjects.Container;
   private statsVisible: boolean = false;
   private linesVisible: boolean = false;
@@ -41,6 +42,7 @@ export default class UIScene extends Phaser.Scene {
     this.createToggleStatsButton();
     this.createToggleLinesButton();
     this.createSpeedControls();
+    this.createRestartButton();
 
     // Listen for updates
     this.game.events.on('UPDATE_BEAN_COUNT', (count: number) => {
@@ -149,6 +151,29 @@ export default class UIScene extends Phaser.Scene {
     this.toggleLinesButtonContainer.add([bg, text]);
   }
 
+  private createRestartButton() {
+    this.restartButtonContainer = this.add.container(0, 0);
+
+    const width = 120;
+    const height = 50;
+    const bg = this.add.rectangle(0, 0, width, height, 0x607D8B); // Grey Blue button
+    bg.setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => {
+          this.game.events.emit('RESTART_SIMULATION');
+      })
+      .on('pointerover', () => bg.setFillStyle(0x78909C))
+      .on('pointerout', () => bg.setFillStyle(0x607D8B));
+
+    const text = this.add.text(0, 0, 'Restart', {
+        fontSize: '18px',
+        color: '#ffffff',
+        fontStyle: 'bold'
+    });
+    text.setOrigin(0.5);
+
+    this.restartButtonContainer.add([bg, text]);
+  }
+
   private createSpeedControls() {
     this.speedControlsContainer = this.add.container(0, 0);
 
@@ -221,6 +246,9 @@ export default class UIScene extends Phaser.Scene {
     }
     if (this.speedControlsContainer) {
         this.speedControlsContainer.setPosition(gameSize.width - 80, 225);
+    }
+    if (this.restartButtonContainer) {
+        this.restartButtonContainer.setPosition(gameSize.width - 80, 285);
     }
     if (this.versionText) {
         this.versionText.setPosition(10, gameSize.height - 20);

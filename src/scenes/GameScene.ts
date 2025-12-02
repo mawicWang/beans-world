@@ -119,6 +119,20 @@ export default class GameScene extends Phaser.Scene {
         this.tweens.timeScale = speed;
     });
 
+    // Listen for Restart
+    this.game.events.on('RESTART_SIMULATION', () => {
+        this.scene.restart();
+    });
+
+    // Cleanup on shutdown
+    this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => {
+        this.game.events.off('SPAWN_BEAN');
+        this.game.events.off('TOGGLE_BEAN_STATS');
+        this.game.events.off('TOGGLE_PAUSE');
+        this.game.events.off('SET_GAME_SPEED');
+        this.game.events.off('RESTART_SIMULATION');
+    });
+
     // We removed this.time.addEvent for food because we want to control it manually via update()
   }
 
