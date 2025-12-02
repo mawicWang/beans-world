@@ -132,14 +132,14 @@ export default class Bean extends Phaser.GameObjects.Container {
     } else {
         // Randomize initial strategy
         this.strategy = {
-            wanderLust: Phaser.Math.FloatBetween(0.2, 0.8),
-            hoardingThreshold: Phaser.Math.FloatBetween(60, 95),
-            riskAversion: Phaser.Math.FloatBetween(0.1, 0.9),
-            hungerTolerance: Phaser.Math.FloatBetween(10, 50),
-            matingThreshold: Phaser.Math.FloatBetween(50, 90),
-            searchRange: Phaser.Math.FloatBetween(0.8, 1.5),
-            fleeThreshold: Phaser.Math.FloatBetween(10, 40),
-            aggression: Phaser.Math.FloatBetween(0.8, 1.5)
+            wanderLust: Phaser.Math.FloatBetween(0.05, 0.95),
+            hoardingThreshold: Phaser.Math.FloatBetween(50, 95),
+            riskAversion: Phaser.Math.FloatBetween(0.0, 1.0),
+            hungerTolerance: Phaser.Math.FloatBetween(10, 70),
+            matingThreshold: Phaser.Math.FloatBetween(30, 95),
+            searchRange: Phaser.Math.FloatBetween(0.5, 2.0),
+            fleeThreshold: Phaser.Math.FloatBetween(10, 60),
+            aggression: Phaser.Math.FloatBetween(0.5, 2.0)
         };
     }
 
@@ -383,7 +383,9 @@ export default class Bean extends Phaser.GameObjects.Container {
     }
 
     // Reproduction Trigger Check (Strategy 6: Mating Threshold)
-    if (this.isAdult && this.satiety > this.strategy.matingThreshold && this.reproCooldown <= 0 && this.moveState === MoveState.IDLE) {
+    // Allow triggering from IDLE or GUARDING states
+    if (this.isAdult && this.satiety > this.strategy.matingThreshold && this.reproCooldown <= 0 &&
+       (this.moveState === MoveState.IDLE || this.moveState === MoveState.GUARDING)) {
          // Probability check based on satiety surplus above threshold
          const surplus = Math.max(0, this.satiety - this.strategy.matingThreshold);
          const baseChance = Math.pow(surplus, 2);
@@ -396,6 +398,8 @@ export default class Bean extends Phaser.GameObjects.Container {
          if (Math.random() < frameProbability) {
              this.moveState = MoveState.SEEKING_MATE;
              this.isSeekingMate = true;
+             // Stop guarding behavior so they can leave territory to find a mate
+             this.isGuarding = false;
          }
     }
 
