@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import Bean, { MoveState } from '../objects/Bean';
+import Bean, { MoveState, SurvivalStrategy } from '../objects/Bean';
 import Food from '../objects/Food';
 import Cocoon from '../objects/Cocoon';
 import HoardManager from '../managers/HoardManager';
@@ -141,10 +141,10 @@ export default class GameScene extends Phaser.Scene {
     this.spawnBean(pointer.x, pointer.y);
   }
 
-  spawnBean(x?: number, y?: number, startSatiety: number = 80, isAdult: boolean = true, attributes: { strength?: number, speed?: number, constitution?: number } = {}, hoardId: string | null = null) {
+  spawnBean(x?: number, y?: number, startSatiety: number = 80, isAdult: boolean = true, attributes: { strength?: number, speed?: number, constitution?: number } = {}, hoardId: string | null = null, strategy?: SurvivalStrategy) {
     const spawnX = x ?? Phaser.Math.Between(50, this.scale.width - 50);
     const spawnY = y ?? Phaser.Math.Between(50, this.scale.height - 50);
-    const bean = new Bean(this, spawnX, spawnY, startSatiety, isAdult, this.areStatsVisible, attributes, hoardId);
+    const bean = new Bean(this, spawnX, spawnY, startSatiety, isAdult, this.areStatsVisible, attributes, hoardId, strategy);
     this.add.existing(bean);
     this.beans.push(bean);
     this.beanGroup.add(bean);
@@ -373,14 +373,14 @@ export default class GameScene extends Phaser.Scene {
           intruder.triggerCombat();
 
           // Check Fleeing
-          if (intruder.satiety < 20) {
+          if (intruder.satiety < intruder.strategy.fleeThreshold) {
               intruder.fleeFrom(guard);
               // Thief Amnesia (handled in fleeFrom logic implicitly by setting target away?
               // Prompt says: "If thief flees, set moveTarget = null if targeting food".
               // fleeFrom sets moveTarget to run away, so that overrides food target.)
           }
 
-          if (guard.satiety < 20) {
+          if (guard.satiety < guard.strategy.fleeThreshold) {
                guard.fleeFrom(intruder);
                // Guard abandonment (handled by changing state to FLEEING, need to clear hoardLocation?)
                // Prompt: "If guard flees, abandon hoardLocation = null"
@@ -482,6 +482,8 @@ export default class GameScene extends Phaser.Scene {
           constitution: [parent1.constitution, parent2.constitution]
       };
 
+      const parentsStrategies = [parent1.strategy, parent2.strategy];
+
       // Determine Inherited Hoard ID
       let inheritedHoardId: string | null = null;
 
@@ -528,7 +530,7 @@ export default class GameScene extends Phaser.Scene {
       }
 
       // Create Cocoon
-      const cocoon = new Cocoon(this, midX, midY, totalSatiety, color1, color2, parentsAttributes, inheritedHoardId);
+      const cocoon = new Cocoon(this, midX, midY, totalSatiety, color1, color2, parentsAttributes, inheritedHoardId, parentsStrategies);
       this.add.existing(cocoon);
       this.cocoons.push(cocoon);
 
