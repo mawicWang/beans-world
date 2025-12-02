@@ -794,6 +794,10 @@ export default class Bean extends Phaser.GameObjects.Container {
              if (distHoards < 10) continue;
           }
 
+          // Check if intruder is within hoard territory (Strict defense)
+          const distToHoard = Phaser.Math.Distance.Between(this.hoardLocation.x, this.hoardLocation.y, other.x, other.y);
+          if (distToHoard > this.hoardRadius) continue;
+
           const dist = Phaser.Math.Distance.Between(this.x, this.y, other.x, other.y);
           if (dist < closestDist) {
               closestDist = dist;
