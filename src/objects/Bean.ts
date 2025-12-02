@@ -17,6 +17,7 @@ export enum MoveState {
 
 export default class Bean extends Phaser.GameObjects.Container {
   private bodyGraphics: Phaser.GameObjects.Graphics;
+  private hoardGraphics: Phaser.GameObjects.Graphics;
   private statusPanel: Phaser.GameObjects.Container;
   private statusText: Phaser.GameObjects.Text;
 
@@ -109,6 +110,10 @@ export default class Bean extends Phaser.GameObjects.Container {
     this.bodyGraphics = scene.add.graphics();
     this.add(this.bodyGraphics);
 
+    // Hoard Graphics (Separate from container to avoid jitter)
+    this.hoardGraphics = scene.add.graphics();
+    this.hoardGraphics.setDepth(-1); // Draw below beans
+
     // Status Panel
     this.statusPanel = scene.add.container(25, -25);
     // Background size will be dynamic based on text
@@ -132,6 +137,7 @@ export default class Bean extends Phaser.GameObjects.Container {
     // Clean up listener when destroyed
     this.once('destroy', () => {
         scene.game.events.off('TOGGLE_BEAN_STATS', toggleHandler);
+        this.hoardGraphics.destroy();
     });
 
     // Initialize tail at head position
@@ -917,6 +923,7 @@ export default class Bean extends Phaser.GameObjects.Container {
   private drawJelly(tailOffset: Phaser.Math.Vector2) {
     this.updateVisuals();
     this.bodyGraphics.clear();
+    this.hoardGraphics.clear();
 
     // Map satiety (0-100) to Alpha (0.4 - 1.0)
     const alpha = Phaser.Math.Clamp(0.4 + (this.satiety / this.maxSatiety) * 0.6, 0.4, 1.0);
@@ -961,17 +968,14 @@ export default class Bean extends Phaser.GameObjects.Container {
     this.bodyGraphics.fillPath();
     this.bodyGraphics.strokePath();
 
-    // Draw Hoard Radius
+    // Draw Hoard Radius (Independent from Bean container)
     if (this.hoardLocation) {
-        const localHoardX = this.hoardLocation.x - this.x;
-        const localHoardY = this.hoardLocation.y - this.y;
+        // Draw in world space using the separate graphics object
+        this.hoardGraphics.fillStyle(0x00ff00, 0.1);
+        this.hoardGraphics.fillCircle(this.hoardLocation.x, this.hoardLocation.y, this.hoardRadius);
 
-        // Semi-transparent green circle with thicker darker border
-        this.bodyGraphics.fillStyle(0x00ff00, 0.1);
-        this.bodyGraphics.fillCircle(localHoardX, localHoardY, this.hoardRadius);
-
-        this.bodyGraphics.lineStyle(3, 0x006400, 0.5);
-        this.bodyGraphics.strokeCircle(localHoardX, localHoardY, this.hoardRadius);
+        this.hoardGraphics.lineStyle(3, 0x006400, 0.5);
+        this.hoardGraphics.strokeCircle(this.hoardLocation.x, this.hoardLocation.y, this.hoardRadius);
     }
 
     // Draw Icons (Combat > Guard > Love)
