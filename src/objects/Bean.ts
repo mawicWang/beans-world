@@ -20,6 +20,7 @@ export default class Bean extends Phaser.GameObjects.Container {
   private hoardGraphics: Phaser.GameObjects.Graphics;
   private statusPanel: Phaser.GameObjects.Container;
   private statusText: Phaser.GameObjects.Text;
+  private showHoardLines: boolean = false;
 
   // Hoarding & Resources
   private hoardLocation: Phaser.Math.Vector2 | null = null;
@@ -143,9 +144,15 @@ export default class Bean extends Phaser.GameObjects.Container {
     };
     scene.game.events.on('TOGGLE_BEAN_STATS', toggleHandler);
 
+    const toggleLinesHandler = (visible: boolean) => {
+        this.showHoardLines = visible;
+    };
+    scene.game.events.on('TOGGLE_HOARD_LINES', toggleLinesHandler);
+
     // Clean up listener when destroyed
     this.once('destroy', () => {
         scene.game.events.off('TOGGLE_BEAN_STATS', toggleHandler);
+        scene.game.events.off('TOGGLE_HOARD_LINES', toggleLinesHandler);
         this.hoardGraphics.destroy();
     });
 
@@ -764,6 +771,8 @@ export default class Bean extends Phaser.GameObjects.Container {
   }
 
   private findIntruder(): Bean | null {
+      if (!this.hoardLocation) return null;
+
       const scene = this.scene as unknown as GameScene;
       const beans = scene.getBeans();
 
@@ -777,6 +786,13 @@ export default class Bean extends Phaser.GameObjects.Container {
 
           // Don't attack partner
           if (other === this.lockedPartner) continue;
+
+          // Don't attack friends (shared hoard)
+          const otherHoard = other.getHoardLocation();
+          if (otherHoard) {
+             const distHoards = Phaser.Math.Distance.Between(this.hoardLocation.x, this.hoardLocation.y, otherHoard.x, otherHoard.y);
+             if (distHoards < 10) continue;
+          }
 
           const dist = Phaser.Math.Distance.Between(this.x, this.y, other.x, other.y);
           if (dist < closestDist) {
@@ -1055,6 +1071,36 @@ export default class Bean extends Phaser.GameObjects.Container {
 
         this.hoardGraphics.lineStyle(3, 0x006400, 0.5);
         this.hoardGraphics.strokeCircle(this.hoardLocation.x, this.hoardLocation.y, this.hoardRadius);
+
+        if (this.showHoardLines) {
+            this.hoardGraphics.lineStyle(2, 0xffffff, 0.5);
+            // Manual dashed line
+            const start = new Phaser.Math.Vector2(this.x, this.y);
+            const end = this.hoardLocation;
+            const dist = start.distance(end);
+            const dashLen = 10;
+            const gapLen = 5;
+            const steps = dist / (dashLen + gapLen);
+            const dir = end.clone().subtract(start).normalize();
+
+            this.hoardGraphics.beginPath();
+            for (let i = 0; i < steps; i++) {
+                const s = start.clone().add(dir.clone().scale(i * (dashLen + gapLen)));
+                const e = s.clone().add(dir.clone().scale(dashLen));
+                const currentDist = s.distance(start);
+
+                if (currentDist >= dist) break;
+
+                this.hoardGraphics.moveTo(s.x, s.y);
+
+                if (e.distance(start) > dist) {
+                     this.hoardGraphics.lineTo(end.x, end.y);
+                } else {
+                     this.hoardGraphics.lineTo(e.x, e.y);
+                }
+            }
+            this.hoardGraphics.strokePath();
+        }
     }
 
     // Draw Icons (Combat > Guard > Love)
