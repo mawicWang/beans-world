@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import Bean, { MoveState } from '../objects/Bean';
 import Food from '../objects/Food';
 import Cocoon from '../objects/Cocoon';
+import HoardManager from '../managers/HoardManager';
 
 export default class GameScene extends Phaser.Scene {
   private beans: Bean[] = [];
@@ -9,6 +10,7 @@ export default class GameScene extends Phaser.Scene {
   private foods: Food[] = [];
   private foodGroup!: Phaser.Physics.Arcade.Group;
   private boundsGraphics!: Phaser.GameObjects.Graphics;
+  public hoardManager!: HoardManager;
 
   private isPaused: boolean = false;
   private currentSpeed: number = 1;
@@ -24,6 +26,9 @@ export default class GameScene extends Phaser.Scene {
   }
 
   create() {
+    // Initialize Hoard Manager
+    this.hoardManager = new HoardManager(this);
+
     // Create physics group for beans
     this.beanGroup = this.physics.add.group();
 
@@ -135,10 +140,10 @@ export default class GameScene extends Phaser.Scene {
     this.spawnBean(pointer.x, pointer.y);
   }
 
-  spawnBean(x?: number, y?: number, startSatiety: number = 80, isAdult: boolean = true, attributes: { strength?: number, speed?: number, constitution?: number } = {}, hoardLocation: Phaser.Math.Vector2 | null = null) {
+  spawnBean(x?: number, y?: number, startSatiety: number = 80, isAdult: boolean = true, attributes: { strength?: number, speed?: number, constitution?: number } = {}, hoardId: string | null = null) {
     const spawnX = x ?? Phaser.Math.Between(50, this.scale.width - 50);
     const spawnY = y ?? Phaser.Math.Between(50, this.scale.height - 50);
-    const bean = new Bean(this, spawnX, spawnY, startSatiety, isAdult, this.areStatsVisible, attributes, hoardLocation);
+    const bean = new Bean(this, spawnX, spawnY, startSatiety, isAdult, this.areStatsVisible, attributes, hoardId);
     this.add.existing(bean);
     this.beans.push(bean);
     this.beanGroup.add(bean);
@@ -201,6 +206,9 @@ export default class GameScene extends Phaser.Scene {
     // We update the game logic to match that final step.
     this.simTime += delta;
     this.registry.set('simTime', this.simTime);
+
+    // Update Hoard Manager
+    this.hoardManager.update();
 
     for (let i = this.beans.length - 1; i >= 0; i--) {
         if (this.beans[i].scene) {
@@ -464,29 +472,53 @@ export default class GameScene extends Phaser.Scene {
           constitution: [parent1.constitution, parent2.constitution]
       };
 
-      // Calculate Merged Hoard Location
-      let mergedHoard: Phaser.Math.Vector2 | null = null;
-      const hoard1 = parent1.getHoardLocation();
-      const hoard2 = parent2.getHoardLocation();
+      // Determine Inherited Hoard ID
+      let inheritedHoardId: string | null = null;
 
-      if (hoard1 && hoard2) {
-          // Average of both
-          mergedHoard = new Phaser.Math.Vector2(
-              (hoard1.x + hoard2.x) / 2,
-              (hoard1.y + hoard2.y) / 2
-          );
-      } else if (hoard1) {
-          mergedHoard = new Phaser.Math.Vector2(hoard1.x, hoard1.y);
-      } else if (hoard2) {
-          mergedHoard = new Phaser.Math.Vector2(hoard2.x, hoard2.y);
+      // Logic:
+      // 1. If same hoard ID, inherit it.
+      // 2. If different, merge locations and create NEW hoard.
+      // 3. If one has hoard, inherit it.
+      // 4. If neither, null.
+
+      const id1 = parent1.hoardId;
+      const id2 = parent2.hoardId;
+
+      if (id1 && id2) {
+          if (id1 === id2) {
+              inheritedHoardId = id1;
+          } else {
+              // Merge hoards: Create new hoard at average location
+              const loc1 = parent1.getHoardLocation();
+              const loc2 = parent2.getHoardLocation();
+              if (loc1 && loc2) {
+                  const avgX = (loc1.x + loc2.x) / 2;
+                  const avgY = (loc1.y + loc2.y) / 2;
+                  // Radius? Average or max? Let's take average radius logic (or just default)
+                  // For now, assume default calculation or take from parent 1
+                  // Since we don't have easy access to radius from here without querying manager or bean props,
+                  // we will re-calculate radius based on standard adult size approx * 2.5
+                  // Or better, expose radius in HoardData.
+                  // Let's just use 40 (approx). Or better:
+                  const r1 = this.hoardManager.getHoard(id1)?.radius || 40;
+                  const r2 = this.hoardManager.getHoard(id2)?.radius || 40;
+                  const avgR = (r1 + r2) / 2;
+
+                  inheritedHoardId = this.hoardManager.registerHoard(avgX, avgY, avgR);
+              } else {
+                  inheritedHoardId = id1; // Fallback
+              }
+          }
+      } else if (id1) {
+          inheritedHoardId = id1;
+      } else if (id2) {
+          inheritedHoardId = id2;
       } else {
-          // Create new hoard at cocoon location if neither had one (optional, or wait for them to find food)
-          // For now, let's leave it null and let them establish it when they find excess food
-          mergedHoard = null;
+          inheritedHoardId = null;
       }
 
       // Create Cocoon
-      const cocoon = new Cocoon(this, midX, midY, totalSatiety, color1, color2, parentsAttributes, mergedHoard);
+      const cocoon = new Cocoon(this, midX, midY, totalSatiety, color1, color2, parentsAttributes, inheritedHoardId);
       this.add.existing(cocoon);
 
       // Remove parents
