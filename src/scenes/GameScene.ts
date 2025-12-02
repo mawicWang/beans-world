@@ -6,6 +6,7 @@ import HoardManager from '../managers/HoardManager';
 
 export default class GameScene extends Phaser.Scene {
   private beans: Bean[] = [];
+  private cocoons: Cocoon[] = [];
   private beanGroup!: Phaser.Physics.Arcade.Group;
   private foods: Food[] = [];
   private foodGroup!: Phaser.Physics.Arcade.Group;
@@ -208,6 +209,15 @@ export default class GameScene extends Phaser.Scene {
     this.registry.set('simTime', this.simTime);
 
     // Update Hoard Manager
+    // Cleanup empty hoards before rendering (check both beans and cocoons)
+    // Cast cocoons to match expected type interface if needed, but since we use loose typing in pruneEmptyHoards argument
+    // it accepts objects with hoardId. However, Cocoon is a class, we need to ensure it has hoardId exposed publicly or mapped.
+    // Cocoon has 'inheritedHoardId' property.
+    const allHoardUsers = [
+        ...this.beans.map(b => ({ hoardId: b.hoardId })),
+        ...this.cocoons.map(c => ({ hoardId: c.inheritedHoardId }))
+    ];
+    this.hoardManager.pruneEmptyHoards(allHoardUsers);
     this.hoardManager.update();
 
     for (let i = this.beans.length - 1; i >= 0; i--) {
@@ -520,6 +530,12 @@ export default class GameScene extends Phaser.Scene {
       // Create Cocoon
       const cocoon = new Cocoon(this, midX, midY, totalSatiety, color1, color2, parentsAttributes, inheritedHoardId);
       this.add.existing(cocoon);
+      this.cocoons.push(cocoon);
+
+      cocoon.once('destroy', () => {
+          const idx = this.cocoons.indexOf(cocoon);
+          if (idx > -1) this.cocoons.splice(idx, 1);
+      });
 
       // Remove parents
       this.removeBean(parent1);

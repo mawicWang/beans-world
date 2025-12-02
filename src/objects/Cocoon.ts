@@ -8,7 +8,7 @@ export default class Cocoon extends Phaser.GameObjects.Container {
   private mainColor: number;
   private baseRadius: number = 13; // Slightly smaller than Adult Bean (15)
   private parentsAttributes: { strength: number[], speed: number[], constitution: number[] };
-  private inheritedHoardId: string | null;
+  public inheritedHoardId: string | null;
 
   constructor(
       scene: Phaser.Scene,
