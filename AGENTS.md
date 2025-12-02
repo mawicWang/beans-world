@@ -73,6 +73,11 @@ Beans World is a 2D genetic simulation sandbox built with Phaser. It simulates t
 1.  **Always Build**: Run `npm run build` before submitting. This catches the strict TypeScript errors.
 2.  **Frontend Verification**: Use Playwright (`npx playwright test`) for visual verification if changing UI or rendering.
 
+### Versioning
+*   **Update Version**: You **must** update the version number in `src/version.ts` with every code modification.
+    *   The magnitude of the version bump should reflect the extent and content of the changes.
+    *   This ensures users can verify they are running the latest code.
+
 ### Git & Deployment
 *   **Branching**: `main` is the primary branch.
 *   **Auto-Merge**: Valid PRs are auto-merged if they pass checks.

@@ -1,7 +1,9 @@
 import Phaser from 'phaser';
+import { VERSION } from '../version';
 
 export default class UIScene extends Phaser.Scene {
   private beanCountText!: Phaser.GameObjects.Text;
+  private versionText!: Phaser.GameObjects.Text;
   private addButtonContainer!: Phaser.GameObjects.Container;
   private toggleStatsButtonContainer!: Phaser.GameObjects.Container;
   private speedControlsContainer!: Phaser.GameObjects.Container;
@@ -23,6 +25,13 @@ export default class UIScene extends Phaser.Scene {
       fontSize: '24px',
       color: '#000000',
       fontStyle: 'bold'
+    });
+
+    // Version Text
+    this.versionText = this.add.text(10, this.scale.height - 20, `v${VERSION}`, {
+      fontSize: '14px',
+      color: '#000000',
+      fontStyle: 'normal'
     });
 
     // Add Buttons
@@ -181,6 +190,9 @@ export default class UIScene extends Phaser.Scene {
     }
     if (this.speedControlsContainer) {
         this.speedControlsContainer.setPosition(gameSize.width - 80, 165);
+    }
+    if (this.versionText) {
+        this.versionText.setPosition(10, gameSize.height - 20);
     }
   }
 }
