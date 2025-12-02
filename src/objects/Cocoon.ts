@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { SurvivalStrategy } from './Bean';
 
 export default class Cocoon extends Phaser.GameObjects.Container {
   private totalSatiety: number;
@@ -8,6 +9,7 @@ export default class Cocoon extends Phaser.GameObjects.Container {
   private mainColor: number;
   private baseRadius: number = 13; // Slightly smaller than Adult Bean (15)
   private parentsAttributes: { strength: number[], speed: number[], constitution: number[] };
+  private parentsStrategies: SurvivalStrategy[];
   public inheritedHoardId: string | null;
 
   constructor(
@@ -18,13 +20,15 @@ export default class Cocoon extends Phaser.GameObjects.Container {
       color1: number,
       color2: number,
       parentsAttributes: { strength: number[], speed: number[], constitution: number[] },
-      inheritedHoardId: string | null = null
+      inheritedHoardId: string | null = null,
+      parentsStrategies: SurvivalStrategy[] = []
     ) {
     super(scene, x, y);
 
     this.totalSatiety = totalSatiety;
     this.parentsAttributes = parentsAttributes;
     this.inheritedHoardId = inheritedHoardId;
+    this.parentsStrategies = parentsStrategies;
 
     // Mix the colors of the parents
     this.mainColor = Phaser.Display.Color.Interpolate.ColorWithColor(
@@ -129,13 +133,58 @@ export default class Cocoon extends Phaser.GameObjects.Container {
             constitution: this.mutate(this.average(this.parentsAttributes.constitution))
         };
 
+        // Calculate Strategy for this child
+        let newStrategy: SurvivalStrategy | undefined;
+        if (this.parentsStrategies.length > 0) {
+            newStrategy = this.generateStrategy();
+        }
+
         // Spawn child: isAdult = false
         if (scene.spawnBean) {
-            scene.spawnBean(spawnX, spawnY, satietyPerChild, false, newAttributes, this.inheritedHoardId);
+            scene.spawnBean(spawnX, spawnY, satietyPerChild, false, newAttributes, this.inheritedHoardId, newStrategy);
         }
     }
 
     this.destroy();
+  }
+
+  private generateStrategy(): SurvivalStrategy {
+      // 1. Average parents
+      const s1 = this.parentsStrategies[0];
+      const s2 = this.parentsStrategies[1] || s1; // Fallback if only 1 parent strategy (shouldn't happen)
+
+      const child: any = {};
+      const keys = Object.keys(s1) as Array<keyof SurvivalStrategy>;
+
+      // Average values
+      for (const key of keys) {
+          child[key] = (s1[key] + s2[key]) / 2;
+      }
+
+      // 2. Mutate ONE item
+      const randomKey = Phaser.Utils.Array.GetRandom(keys) as keyof SurvivalStrategy;
+
+      // Define mutation range based on property
+      let mutation = 0;
+      if (['wanderLust', 'riskAversion', 'searchRange', 'aggression'].includes(randomKey)) {
+          mutation = Phaser.Math.FloatBetween(-0.2, 0.2);
+      } else {
+          // Thresholds (0-100)
+          mutation = Phaser.Math.FloatBetween(-10, 10);
+      }
+
+      child[randomKey] += mutation;
+
+      // Clamp values
+      if (['wanderLust', 'riskAversion'].includes(randomKey)) {
+          child[randomKey] = Phaser.Math.Clamp(child[randomKey], 0, 1);
+      } else if (['searchRange', 'aggression'].includes(randomKey)) {
+          child[randomKey] = Phaser.Math.Clamp(child[randomKey], 0.2, 3.0);
+      } else {
+          child[randomKey] = Phaser.Math.Clamp(child[randomKey], 0, 100);
+      }
+
+      return child as SurvivalStrategy;
   }
 
   private average(values: number[]): number {
