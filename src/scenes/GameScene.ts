@@ -23,6 +23,13 @@ export default class GameScene extends Phaser.Scene {
   private foodTimer: number = 0;
   private readonly FOOD_SPAWN_INTERVAL = 500;
 
+  // World Bounds
+  private readonly WORLD_WIDTH = 3000;
+  private readonly WORLD_HEIGHT = 3000;
+
+  // Camera Control State
+  private prevPinchDistance: number | null = null;
+
   constructor() {
     super('GameScene');
   }
@@ -59,8 +66,17 @@ export default class GameScene extends Phaser.Scene {
     });
 
     // Draw visual bounds
-    this.drawBounds(this.scale.width, this.scale.height);
-    this.physics.world.setBounds(0, 0, this.scale.width, this.scale.height);
+    this.drawBounds(this.WORLD_WIDTH, this.WORLD_HEIGHT);
+
+    // Set Physics Boundaries to the larger world
+    this.physics.world.setBounds(0, 0, this.WORLD_WIDTH, this.WORLD_HEIGHT);
+
+    // Setup Camera
+    this.cameras.main.setBounds(0, 0, this.WORLD_WIDTH, this.WORLD_HEIGHT);
+    this.cameras.main.centerOn(this.WORLD_WIDTH / 2, this.WORLD_HEIGHT / 2);
+
+    // Enable multi-touch (add 1 extra pointer for a total of 2)
+    this.input.addPointer(1);
 
     // Launch UI Scene
     this.scene.launch('UIScene');
@@ -142,7 +158,7 @@ export default class GameScene extends Phaser.Scene {
     // We removed this.time.addEvent for food because we want to control it manually via update()
   }
 
-  handleInput(pointer: Phaser.Input.Pointer) {
+  handleInput(_pointer: Phaser.Input.Pointer) {
     // Unlock audio context if it's suspended (common on mobile)
     if (this.sound instanceof Phaser.Sound.WebAudioSoundManager) {
       if (this.sound.context.state === 'suspended') {
@@ -150,21 +166,17 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    // Ignore clicks on the UI area (Top-Right corner where buttons are)
-    // Buttons are around width-80, width 120 (so width-140 to width-20)
-    // Y extends down to ~200
-    if (pointer.x > this.scale.width - 150 && pointer.y < 200) {
-        return;
-    }
-
-    // Spawn a bean at touch location
-    this.spawnBean(pointer.x, pointer.y);
+    // Note: We removed the spawnBean call here as requested.
+    // Beans are now only spawned via the UI button.
   }
 
   spawnBean(x?: number, y?: number, startSatiety: number = 80, isAdult: boolean = true, attributes: { strength?: number, speed?: number, constitution?: number } = {}, hoardId: string | null = null, strategy?: SurvivalStrategy) {
-    const spawnX = x ?? Phaser.Math.Between(50, this.scale.width - 50);
-    const spawnY = y ?? Phaser.Math.Between(50, this.scale.height - 50);
-    const bean = new Bean(this, spawnX, spawnY, startSatiety, isAdult, this.areStatsVisible, this.areHoardLinesVisible, attributes, hoardId, strategy);
+    // If no position provided, spawn randomly within the WORLD bounds (not just screen)
+    // Avoid edges slightly
+    const spawnX = x ?? Phaser.Math.Between(50, this.WORLD_WIDTH - 50);
+    const spawnY = y ?? Phaser.Math.Between(50, this.WORLD_HEIGHT - 50);
+
+    const bean = new Bean(this, spawnX, spawnY, startSatiety, isAdult, this.areStatsVisible, attributes, hoardId, strategy);
     this.add.existing(bean);
     this.beans.push(bean);
     this.beanGroup.add(bean);
@@ -176,12 +188,15 @@ export default class GameScene extends Phaser.Scene {
   }
 
   resize(gameSize: Phaser.Structs.Size) {
+    // Only resize the camera viewport, do NOT change the physics world bounds
     this.cameras.main.setViewport(0, 0, gameSize.width, gameSize.height);
-    this.physics.world.setBounds(0, 0, gameSize.width, gameSize.height);
-    this.drawBounds(gameSize.width, gameSize.height);
+    // Visual bounds are fixed to WORLD size now, so no need to redraw
   }
 
   update(_time: number, delta: number) {
+    // Handle Camera Pan and Zoom
+    this.handleCameraInput();
+
     if (this.isPaused) return;
 
     // Sub-stepping for high speed physics stability
@@ -255,6 +270,56 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
+  private handleCameraInput() {
+    // Check for Pinch first (requires 2 pointers)
+    if (this.input.pointer1.isDown && this.input.pointer2.isDown) {
+        const dist = Phaser.Math.Distance.Between(
+            this.input.pointer1.position.x, this.input.pointer1.position.y,
+            this.input.pointer2.position.x, this.input.pointer2.position.y
+        );
+
+        if (this.prevPinchDistance) {
+            // Calculate scale factor
+            const zoomFactor = dist / this.prevPinchDistance;
+
+            let newZoom = this.cameras.main.zoom * zoomFactor;
+            // Clamp zoom
+            newZoom = Phaser.Math.Clamp(newZoom, 0.25, 2.0);
+
+            this.cameras.main.setZoom(newZoom);
+        }
+        this.prevPinchDistance = dist;
+    }
+    // Pan (requires 1 active pointer, and NO pinch)
+    else if (this.input.activePointer.isDown) {
+        this.prevPinchDistance = null; // Reset pinch state
+
+        const p = this.input.activePointer;
+
+        // UI Check (Screen Space)
+        // Buttons are at Right edge (width - 80 center, so width - 120 start),
+        // extending down to ~350px.
+        // Let's protect the top right corner.
+        if (p.position.x > this.scale.width - 150 && p.position.y < 350) {
+           return;
+        }
+
+        // Calculate delta movement
+        // We use p.position (screen space)
+        const dx = p.position.x - p.prevPosition.x;
+        const dy = p.position.y - p.prevPosition.y;
+
+        if (dx !== 0 || dy !== 0) {
+            // Adjust camera scroll.
+            // We divide by zoom so that the map moves 1:1 with the finger regardless of zoom level.
+            this.cameras.main.scrollX -= dx / this.cameras.main.zoom;
+            this.cameras.main.scrollY -= dy / this.cameras.main.zoom;
+        }
+    } else {
+        this.prevPinchDistance = null;
+    }
+  }
+
   public getBeans(): Bean[] {
     return this.beans;
   }
@@ -264,9 +329,10 @@ export default class GameScene extends Phaser.Scene {
   }
 
   public spawnFood() {
+      // Spawn anywhere in the WORLD
       const padding = 50;
-      const x = Phaser.Math.Between(padding, this.scale.width - padding);
-      const y = Phaser.Math.Between(padding, this.scale.height - padding);
+      const x = Phaser.Math.Between(padding, this.WORLD_WIDTH - padding);
+      const y = Phaser.Math.Between(padding, this.WORLD_HEIGHT - padding);
 
       const typeRoll = Math.random();
       let satiety = 1;
@@ -395,23 +461,10 @@ export default class GameScene extends Phaser.Scene {
           // Check Fleeing
           if (intruder.satiety < intruder.strategy.fleeThreshold) {
               intruder.fleeFrom(guard);
-              // Thief Amnesia (handled in fleeFrom logic implicitly by setting target away?
-              // Prompt says: "If thief flees, set moveTarget = null if targeting food".
-              // fleeFrom sets moveTarget to run away, so that overrides food target.)
           }
 
           if (guard.satiety < guard.strategy.fleeThreshold) {
                guard.fleeFrom(intruder);
-               // Guard abandonment (handled by changing state to FLEEING, need to clear hoardLocation?)
-               // Prompt: "If guard flees, abandon hoardLocation = null"
-               // We can't access private property directly easily without a method or public access.
-               // Let's assume we can cast or add method.
-               // Or better, let's add `abandonHoard()` to Bean.
-               // Since I can't modify Bean right now easily without another step (I just did),
-               // I will check if I exposed hoardLocation. I made it private.
-               // I should have added abandonHoard.
-               // I will cast to any to clear it for now, or assume fleeFrom handles it?
-               // No fleeFrom is generic.
                (guard as any).hoardLocation = null;
           }
       }
@@ -468,8 +521,6 @@ export default class GameScene extends Phaser.Scene {
 
   private checkReproductionOverlap(bean1: Bean, bean2: Bean) {
       // Check if both are seeking mate
-      // Note: Overlap runs every frame they touch, so we need to be careful to only trigger once.
-      // Checking 'active' is the key.
       if (!bean1.active || !bean2.active) return;
 
       const b1Ready = bean1.isSeekingMate;
@@ -507,12 +558,6 @@ export default class GameScene extends Phaser.Scene {
       // Determine Inherited Hoard ID
       let inheritedHoardId: string | null = null;
 
-      // Logic:
-      // 1. If same hoard ID, inherit it.
-      // 2. If different, merge locations and create NEW hoard.
-      // 3. If one has hoard, inherit it.
-      // 4. If neither, null.
-
       const id1 = parent1.hoardId;
       const id2 = parent2.hoardId;
 
@@ -520,25 +565,19 @@ export default class GameScene extends Phaser.Scene {
           if (id1 === id2) {
               inheritedHoardId = id1;
           } else {
-              // Merge hoards: Create new hoard at average location
+              // Merge hoards
               const loc1 = parent1.getHoardLocation();
               const loc2 = parent2.getHoardLocation();
               if (loc1 && loc2) {
                   const avgX = (loc1.x + loc2.x) / 2;
                   const avgY = (loc1.y + loc2.y) / 2;
-                  // Radius? Average or max? Let's take average radius logic (or just default)
-                  // For now, assume default calculation or take from parent 1
-                  // Since we don't have easy access to radius from here without querying manager or bean props,
-                  // we will re-calculate radius based on standard adult size approx * 2.5
-                  // Or better, expose radius in HoardData.
-                  // Let's just use 40 (approx). Or better:
                   const r1 = this.hoardManager.getHoard(id1)?.radius || 40;
                   const r2 = this.hoardManager.getHoard(id2)?.radius || 40;
                   const avgR = (r1 + r2) / 2;
 
                   inheritedHoardId = this.hoardManager.registerHoard(avgX, avgY, avgR);
               } else {
-                  inheritedHoardId = id1; // Fallback
+                  inheritedHoardId = id1;
               }
           }
       } else if (id1) {

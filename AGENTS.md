@@ -2,6 +2,10 @@
 
 This file outlines the project structure, coding conventions, and architectural decisions for "Beans World". Use this context when analyzing code or implementing changes.
 
+## 0. Critical Instructions
+*   **Read PROJECT_MAP.md**: At the start of every session, you **must** read `PROJECT_MAP.md` to understand the current file structure and responsibilities.
+*   **Maintain PROJECT_MAP.md**: Whenever you add, remove, or significantly rename files, you **must** update `PROJECT_MAP.md` to reflect these changes accurately.
+
 ## 1. Project Overview
 Beans World is a 2D genetic simulation sandbox built with Phaser. It simulates the lifecycle of "Beans"—entities with genetic traits (strength, speed, constitution)—that eat, mate, guard territory, and fight.
 
