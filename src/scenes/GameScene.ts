@@ -17,6 +17,7 @@ export default class GameScene extends Phaser.Scene {
   private currentSpeed: number = 1;
   private simTime: number = 0;
   private areStatsVisible: boolean = false;
+  private areHoardLinesVisible: boolean = false;
 
   // Manual Timer for Food Spawning (since we don't rely on Phaser's TimeScale for this anymore)
   private foodTimer: number = 0;
@@ -103,6 +104,11 @@ export default class GameScene extends Phaser.Scene {
         this.areStatsVisible = visible;
         // The individual beans also listen to this event to toggle themselves,
         // so we just need to track the state for new beans.
+    });
+
+    // Listen for Hoard Lines Toggle
+    this.game.events.on('TOGGLE_HOARD_LINES', (visible: boolean) => {
+        this.areHoardLinesVisible = visible;
     });
 
     // Listen for Pause Toggle
