@@ -17,6 +17,7 @@ export default class GameScene extends Phaser.Scene {
   private currentSpeed: number = 1;
   private simTime: number = 0;
   private areStatsVisible: boolean = false;
+  private areHoardLinesVisible: boolean = false;
 
   // Manual Timer for Food Spawning (since we don't rely on Phaser's TimeScale for this anymore)
   private foodTimer: number = 0;
@@ -89,6 +90,11 @@ export default class GameScene extends Phaser.Scene {
         // so we just need to track the state for new beans.
     });
 
+    // Listen for Hoard Lines Toggle
+    this.game.events.on('TOGGLE_HOARD_LINES', (visible: boolean) => {
+        this.areHoardLinesVisible = visible;
+    });
+
     // Listen for Pause Toggle
     this.game.events.on('TOGGLE_PAUSE', (isPaused: boolean) => {
         this.isPaused = isPaused;
@@ -158,7 +164,7 @@ export default class GameScene extends Phaser.Scene {
   spawnBean(x?: number, y?: number, startSatiety: number = 80, isAdult: boolean = true, attributes: { strength?: number, speed?: number, constitution?: number } = {}, hoardId: string | null = null, strategy?: SurvivalStrategy) {
     const spawnX = x ?? Phaser.Math.Between(50, this.scale.width - 50);
     const spawnY = y ?? Phaser.Math.Between(50, this.scale.height - 50);
-    const bean = new Bean(this, spawnX, spawnY, startSatiety, isAdult, this.areStatsVisible, attributes, hoardId, strategy);
+    const bean = new Bean(this, spawnX, spawnY, startSatiety, isAdult, this.areStatsVisible, this.areHoardLinesVisible, attributes, hoardId, strategy);
     this.add.existing(bean);
     this.beans.push(bean);
     this.beanGroup.add(bean);

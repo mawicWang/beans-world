@@ -110,6 +110,7 @@ export default class Bean extends Phaser.GameObjects.Container {
       startSatiety: number = 80,
       startAdult: boolean = true,
       showStats: boolean = false,
+      showHoardLines: boolean = false,
       attributes: { strength?: number, speed?: number, constitution?: number } = {},
       hoardId: string | null = null,
       strategy?: SurvivalStrategy
@@ -117,6 +118,7 @@ export default class Bean extends Phaser.GameObjects.Container {
     super(scene, x, y);
 
     this.hoardId = hoardId;
+    this.showHoardLines = showHoardLines;
 
     this.satiety = startSatiety;
     this.isAdult = startAdult;
@@ -1125,8 +1127,13 @@ export default class Bean extends Phaser.GameObjects.Container {
         const hoardLocation = this.getHoardLocation();
         if (hoardLocation) {
             this.bodyGraphics.lineStyle(2, 0xffffff, 0.5);
-            const start = new Phaser.Math.Vector2(0, 0); // Local center
-            const end = new Phaser.Math.Vector2(hoardLocation.x - this.x, hoardLocation.y - this.y);
+            // Draw from Hoard (static) to Bean (dynamic) to prevent dash jitter
+            // Local coordinates relative to Bean:
+            // Hoard is at (hoardLocation.x - this.x, hoardLocation.y - this.y)
+            // Bean is at (0, 0)
+
+            const start = new Phaser.Math.Vector2(hoardLocation.x - this.x, hoardLocation.y - this.y);
+            const end = new Phaser.Math.Vector2(0, 0);
 
             const dist = start.distance(end);
             const dashLen = 10;
@@ -1138,9 +1145,11 @@ export default class Bean extends Phaser.GameObjects.Container {
             for (let i = 0; i < steps; i++) {
                 const s = start.clone().add(dir.clone().scale(i * (dashLen + gapLen)));
                 const e = s.clone().add(dir.clone().scale(dashLen));
-                const currentDist = s.distance(start);
 
-                if (currentDist >= dist) break;
+                // Check if we passed the destination (Bean center)
+                // Since we start far away and move towards 0,0 (local), check distance to start
+                const distFromStart = s.distance(start);
+                if (distFromStart >= dist) break;
 
                 this.bodyGraphics.moveTo(s.x, s.y);
 
