@@ -29,6 +29,7 @@ export default class GameScene extends Phaser.Scene {
 
   // Camera Control State
   private prevPinchDistance: number | null = null;
+  private lastPointerPosition: Phaser.Math.Vector2 | null = null;
 
   constructor() {
     super('GameScene');
@@ -176,7 +177,7 @@ export default class GameScene extends Phaser.Scene {
     const spawnX = x ?? Phaser.Math.Between(50, this.WORLD_WIDTH - 50);
     const spawnY = y ?? Phaser.Math.Between(50, this.WORLD_HEIGHT - 50);
 
-    const bean = new Bean(this, spawnX, spawnY, startSatiety, isAdult, this.areStatsVisible, attributes, hoardId, strategy);
+    const bean = new Bean(this, spawnX, spawnY, startSatiety, isAdult, this.areStatsVisible, this.areHoardLinesVisible, attributes, hoardId, strategy);
     this.add.existing(bean);
     this.beans.push(bean);
     this.beanGroup.add(bean);
@@ -273,6 +274,8 @@ export default class GameScene extends Phaser.Scene {
   private handleCameraInput() {
     // Check for Pinch first (requires 2 pointers)
     if (this.input.pointer1.isDown && this.input.pointer2.isDown) {
+        this.lastPointerPosition = null; // Reset pan state
+
         const dist = Phaser.Math.Distance.Between(
             this.input.pointer1.position.x, this.input.pointer1.position.y,
             this.input.pointer2.position.x, this.input.pointer2.position.y
@@ -301,22 +304,33 @@ export default class GameScene extends Phaser.Scene {
         // extending down to ~350px.
         // Let's protect the top right corner.
         if (p.position.x > this.scale.width - 150 && p.position.y < 350) {
+           this.lastPointerPosition = null; // Ensure we don't resume panning with a jump
            return;
         }
 
-        // Calculate delta movement
-        // We use p.position (screen space)
-        const dx = p.position.x - p.prevPosition.x;
-        const dy = p.position.y - p.prevPosition.y;
+        if (this.lastPointerPosition) {
+            // Calculate delta movement
+            // We use p.position (screen space)
+            const dx = p.position.x - this.lastPointerPosition.x;
+            const dy = p.position.y - this.lastPointerPosition.y;
 
-        if (dx !== 0 || dy !== 0) {
-            // Adjust camera scroll.
-            // We divide by zoom so that the map moves 1:1 with the finger regardless of zoom level.
-            this.cameras.main.scrollX -= dx / this.cameras.main.zoom;
-            this.cameras.main.scrollY -= dy / this.cameras.main.zoom;
+            if (dx !== 0 || dy !== 0) {
+                // Adjust camera scroll.
+                // We divide by zoom so that the map moves 1:1 with the finger regardless of zoom level.
+                this.cameras.main.scrollX -= dx / this.cameras.main.zoom;
+                this.cameras.main.scrollY -= dy / this.cameras.main.zoom;
+            }
+        }
+
+        // Update stored position
+        if (!this.lastPointerPosition) {
+            this.lastPointerPosition = new Phaser.Math.Vector2(p.position.x, p.position.y);
+        } else {
+            this.lastPointerPosition.set(p.position.x, p.position.y);
         }
     } else {
         this.prevPinchDistance = null;
+        this.lastPointerPosition = null;
     }
   }
 
