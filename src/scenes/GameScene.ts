@@ -3,6 +3,7 @@ import Bean, { MoveState, SurvivalStrategy } from '../objects/Bean';
 import Food from '../objects/Food';
 import Cocoon from '../objects/Cocoon';
 import HoardManager from '../managers/HoardManager';
+import PangolinStatue from '../objects/PangolinStatue';
 
 export default class GameScene extends Phaser.Scene {
   private beans: Bean[] = [];
@@ -39,8 +40,14 @@ export default class GameScene extends Phaser.Scene {
     // Initialize Hoard Manager
     this.hoardManager = new HoardManager(this);
 
+    // Create Pangolin Statue in the center
+    const statue = new PangolinStatue(this, this.WORLD_WIDTH / 2, this.WORLD_HEIGHT / 2);
+
     // Create physics group for beans
     this.beanGroup = this.physics.add.group();
+
+    // Add collision between beans and statue
+    this.physics.add.collider(this.beanGroup, statue);
 
     // Create physics group for food
     this.foodGroup = this.physics.add.group();
