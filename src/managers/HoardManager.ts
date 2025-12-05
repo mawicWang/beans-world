@@ -1,86 +1,113 @@
 import Phaser from 'phaser';
+import { TownCenter } from '../objects/structure/TownCenter';
 
+// Keeping HoardData for backward compatibility if needed,
+// but primarily we act as a manager for TownCenters.
 export interface HoardData {
   id: string;
   x: number;
   y: number;
   radius: number;
-  // We might want to track how many beans use this hoard to remove it if empty?
-  // For now, let's keep it simple. The user didn't ask for GC of hoards,
-  // but it's good practice. We can add reference counting later if needed.
 }
 
 export default class HoardManager {
-  // private scene: Phaser.Scene; // Unused
-  private hoards: Map<string, HoardData>;
-  private graphics: Phaser.GameObjects.Graphics;
+  private scene: Phaser.Scene;
+  // Map ID -> TownCenter
+  private townCenters: Map<string, TownCenter>;
+  // Group for physics collision
+  public structureGroup: Phaser.Physics.Arcade.StaticGroup;
+
   private idCounter: number = 0;
+  private territoryGraphics: Phaser.GameObjects.Graphics;
 
   constructor(scene: Phaser.Scene) {
-    // this.scene = scene;
-    this.hoards = new Map();
-    this.graphics = scene.add.graphics();
-    // Ensure graphics is drawn at a low depth so beans appear on top
-    this.graphics.setDepth(-1);
+    this.scene = scene;
+    this.townCenters = new Map();
+    this.structureGroup = scene.physics.add.staticGroup();
+
+    // Graphics for territories (drawn below everything)
+    this.territoryGraphics = scene.add.graphics();
+    this.territoryGraphics.setDepth(-1);
   }
 
   public registerHoard(x: number, y: number, radius: number): string {
-    // Generate a simple ID. In a real game, maybe use UUID.
-    const id = `hoard_${++this.idCounter}_${Date.now()}`;
+    const id = `town_${++this.idCounter}_${Date.now()}`;
 
-    this.hoards.set(id, {
-      id,
-      x,
-      y,
-      radius
-    });
+    const townCenter = new TownCenter(this.scene, x, y, id, radius);
+    this.townCenters.set(id, townCenter);
+    this.structureGroup.add(townCenter);
 
     return id;
   }
 
   public getHoard(id: string): HoardData | undefined {
-    return this.hoards.get(id);
+    const center = this.townCenters.get(id);
+    if (!center) return undefined;
+
+    // Return an object compatible with the old interface
+    return {
+      id: center.id,
+      x: center.x,
+      y: center.y,
+      radius: center.radius
+    };
   }
 
-  public pruneEmptyHoards(beans: { hoardId: string | null }[]) {
-    // 1. Collect all active hoard IDs
+  public getTownCenter(id: string): TownCenter | undefined {
+    return this.townCenters.get(id);
+  }
+
+  public getGroup(): Phaser.Physics.Arcade.StaticGroup {
+      return this.structureGroup;
+  }
+
+  public pruneEmptyHoards(beans: { hoardId: string | null, inheritedHoardId?: string | null }[]) {
+    // 1. Collect all active hoard IDs from Beans and Cocoons (which store inheritedHoardId)
     const activeHoardIds = new Set<string>();
     for (const bean of beans) {
       if (bean.hoardId) {
         activeHoardIds.add(bean.hoardId);
       }
+      // Check for inherited ID if available (e.g. Cocoon)
+      if (bean.inheritedHoardId) {
+          activeHoardIds.add(bean.inheritedHoardId);
+      }
     }
 
     // 2. Identify hoards to remove
-    const hoardsToRemove: string[] = [];
-    for (const id of this.hoards.keys()) {
+    const idsToRemove: string[] = [];
+    for (const id of this.townCenters.keys()) {
       if (!activeHoardIds.has(id)) {
-        hoardsToRemove.push(id);
+        idsToRemove.push(id);
       }
     }
 
     // 3. Delete them
-    for (const id of hoardsToRemove) {
-      this.hoards.delete(id);
+    for (const id of idsToRemove) {
+      const center = this.townCenters.get(id);
+      if (center) {
+        center.destroy(); // Removes from scene and physics group
+      }
+      this.townCenters.delete(id);
     }
   }
 
   public update() {
-    this.graphics.clear();
+    this.territoryGraphics.clear();
+    this.territoryGraphics.fillStyle(0x00ff00, 0.1); // Faint green
+    this.territoryGraphics.lineStyle(2, 0x006400, 0.3);
 
-    // Common styles for all hoards
-    this.graphics.fillStyle(0x00ff00, 0.2); // Alpha 0.2
-    this.graphics.lineStyle(3, 0x006400, 0.5);
-
-    // Draw each hoard once
-    for (const hoard of this.hoards.values()) {
-        this.graphics.fillCircle(hoard.x, hoard.y, hoard.radius);
-        this.graphics.strokeCircle(hoard.x, hoard.y, hoard.radius);
+    for (const center of this.townCenters.values()) {
+        this.territoryGraphics.fillCircle(center.x, center.y, center.radius);
+        this.territoryGraphics.strokeCircle(center.x, center.y, center.radius);
     }
   }
 
   public destroy() {
-      this.graphics.destroy();
-      this.hoards.clear();
+      this.territoryGraphics.destroy();
+      for (const center of this.townCenters.values()) {
+          center.destroy();
+      }
+      this.townCenters.clear();
   }
 }
