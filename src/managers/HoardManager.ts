@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { TownCenter } from '../objects/structure/TownCenter';
+import { ConstructionSite } from '../objects/structure/ConstructionSite';
 
 // Keeping HoardData for backward compatibility if needed,
 // but primarily we act as a manager for TownCenters.
@@ -14,6 +15,9 @@ export default class HoardManager {
   private scene: Phaser.Scene;
   // Map ID -> TownCenter
   private townCenters: Map<string, TownCenter>;
+  // Map ID -> ConstructionSite
+  private constructionSites: Map<string, ConstructionSite>;
+
   // Group for physics collision
   public structureGroup: Phaser.Physics.Arcade.StaticGroup;
 
@@ -23,6 +27,7 @@ export default class HoardManager {
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
     this.townCenters = new Map();
+    this.constructionSites = new Map();
     this.structureGroup = scene.physics.add.staticGroup();
 
     // Graphics for territories (drawn below everything)
@@ -38,6 +43,47 @@ export default class HoardManager {
     this.structureGroup.add(townCenter);
 
     return id;
+  }
+
+  public startConstruction(hoardId: string, x: number, y: number, buildingType: string, cost: number) {
+      const siteId = `site_${++this.idCounter}_${Date.now()}`;
+      const site = new ConstructionSite(this.scene, x, y, siteId, buildingType, cost, () => {
+          // On Complete
+          this.finishConstruction(siteId, hoardId, buildingType);
+      });
+      this.constructionSites.set(siteId, site);
+      this.structureGroup.add(site);
+      return siteId;
+  }
+
+  private finishConstruction(siteId: string, hoardId: string, buildingType: string) {
+      const site = this.constructionSites.get(siteId);
+      if (site) {
+          const x = site.x;
+          const y = site.y;
+          this.constructionSites.delete(siteId);
+          // Actually spawn the building here. For now, just another dummy structure or upgrade logic
+          // But since we only have TownCenter, let's just log it or maybe spawn a decorative structure?
+          console.log(`Construction of ${buildingType} complete at ${x}, ${y} for hoard ${hoardId}`);
+
+          // For demo purposes, we can spawn a "Storage Pit" (just a visual box for now, until we make classes)
+          // Or we can just leave it cleared.
+      }
+  }
+
+  public getConstructionSites(hoardId: string): ConstructionSite[] {
+      // Return sites close to this hoard?
+      // Ideally we should link sites to hoards. For now, we return all sites near the hoard center.
+      const town = this.townCenters.get(hoardId);
+      if (!town) return [];
+
+      const sites: ConstructionSite[] = [];
+      for (const site of this.constructionSites.values()) {
+          if (Phaser.Math.Distance.Between(site.x, site.y, town.x, town.y) < town.radius) {
+              sites.push(site);
+          }
+      }
+      return sites;
   }
 
   public getHoard(id: string): HoardData | undefined {
@@ -109,5 +155,9 @@ export default class HoardManager {
           center.destroy();
       }
       this.townCenters.clear();
+      for (const site of this.constructionSites.values()) {
+          site.destroy();
+      }
+      this.constructionSites.clear();
   }
 }

@@ -10,7 +10,14 @@ export enum MoveState {
   HAULING_FOOD,
   GUARDING,
   CHASING_ENEMY,
-  FLEEING
+  FLEEING,
+  BUILDING
+}
+
+export enum BeanRole {
+  WORKER = 'worker',
+  GUARD = 'guard',
+  EXPLORER = 'explorer'
 }
 
 export interface SurvivalStrategy {
@@ -42,6 +49,7 @@ export interface IBean extends Phaser.GameObjects.Container {
   isAdult: boolean;
   isFull: boolean;
   reproCooldown: number;
+  role: BeanRole | null;
 
   // State
   moveState: MoveState;

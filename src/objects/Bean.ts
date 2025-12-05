@@ -3,12 +3,12 @@ import type GameScene from '../scenes/GameScene';
 import Food from './Food';
 import { ISpatialObject } from '../managers/SpatialGrid';
 import { GameConfig } from '../config/GameConfig';
-import { IBean, MoveState, SurvivalStrategy } from './bean/BeanTypes';
+import { IBean, MoveState, SurvivalStrategy, BeanRole } from './bean/BeanTypes';
 import { BeanRenderer } from './bean/BeanRenderer';
 import { BeanPhysics } from './bean/BeanPhysics';
 import { BeanBrain } from './bean/BeanBrain';
 
-export { MoveState };
+export { MoveState, BeanRole };
 export type { SurvivalStrategy };
 
 export default class Bean extends Phaser.GameObjects.Container implements ISpatialObject, IBean {
@@ -27,6 +27,7 @@ export default class Bean extends Phaser.GameObjects.Container implements ISpati
   public isAdult: boolean = true;
   public isFull: boolean = false;
   public reproCooldown: number = 0;
+  public role: BeanRole | null = null;
 
   public moveState: MoveState = MoveState.IDLE;
   public previousState: MoveState = MoveState.IDLE;
@@ -95,6 +96,11 @@ export default class Bean extends Phaser.GameObjects.Container implements ISpati
             fleeThreshold: Phaser.Math.FloatBetween(10, 60),
             aggression: Phaser.Math.FloatBetween(0.5, 2.0)
         };
+    }
+
+    // Assign Role if Adult
+    if (this.isAdult && !this.role) {
+      this.assignRole();
     }
 
     // Initialize Components
@@ -234,6 +240,7 @@ export default class Bean extends Phaser.GameObjects.Container implements ISpati
 
   growUp() {
       this.isAdult = true;
+      this.assignRole();
       const startRadius = this.currentRadius;
       const targetRadius = this.adultRadius;
 
@@ -250,6 +257,29 @@ export default class Bean extends Phaser.GameObjects.Container implements ISpati
              this.physicsComponent.updateBodySize();
           }
       });
+  }
+
+  assignRole() {
+      if (this.strength >= this.speed && this.strength >= this.constitution) {
+          this.role = BeanRole.GUARD;
+      } else if (this.speed >= this.strength && this.speed >= this.constitution) {
+          this.role = BeanRole.EXPLORER;
+      } else {
+          this.role = BeanRole.WORKER;
+      }
+
+      // Slightly bias strategy based on role
+      if (this.role === BeanRole.GUARD) {
+          this.strategy.aggression = Math.max(this.strategy.aggression, 1.2);
+          this.strategy.riskAversion = Math.min(this.strategy.riskAversion, 0.3); // Braver
+          this.strategy.searchRange = Math.max(this.strategy.searchRange, 1.0);
+      } else if (this.role === BeanRole.EXPLORER) {
+          this.strategy.wanderLust = Math.max(this.strategy.wanderLust, 0.8);
+          this.strategy.searchRange = Math.max(this.strategy.searchRange, 1.5);
+      } else { // WORKER
+          this.strategy.hoardingThreshold = Math.min(this.strategy.hoardingThreshold, 80); // Haul sooner
+          this.strategy.riskAversion = Math.max(this.strategy.riskAversion, 0.7); // More timid
+      }
   }
 
   handleStuck() {
