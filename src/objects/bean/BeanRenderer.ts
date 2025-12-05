@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { IBean } from './BeanTypes';
+import { IBean, BeanRole } from './BeanTypes';
 import { GameConfig } from '../../config/GameConfig';
 
 export class BeanRenderer {
@@ -149,6 +149,9 @@ export class BeanRenderer {
              }
         }
 
+        // Role Icons / Hats
+        this.drawRoleIndicator(headRadius);
+
         // Icons
         const iconY = -headRadius - 15;
         if (this.bean.combatTimer > 0) {
@@ -240,5 +243,46 @@ export class BeanRenderer {
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
         osc.start();
         osc.stop(now + 0.15);
+    }
+
+    private drawRoleIndicator(headRadius: number) {
+        if (!this.bean.role) return;
+
+        const yOffset = -headRadius * 0.8;
+
+        if (this.bean.role === BeanRole.GUARD) {
+            // Helmet (Silver/Grey)
+            this.bodyGraphics.fillStyle(0x95a5a6, 1);
+            this.bodyGraphics.lineStyle(1, 0x7f8c8d, 1);
+            this.bodyGraphics.beginPath();
+            this.bodyGraphics.arc(0, yOffset, headRadius * 0.7, Math.PI, 0, false);
+            this.bodyGraphics.lineTo(headRadius * 0.7, yOffset + 5);
+            this.bodyGraphics.lineTo(-headRadius * 0.7, yOffset + 5);
+            this.bodyGraphics.closePath();
+            this.bodyGraphics.fillPath();
+            this.bodyGraphics.strokePath();
+        } else if (this.bean.role === BeanRole.WORKER) {
+            // Hard Hat (Yellow/Orange)
+            this.bodyGraphics.fillStyle(0xf39c12, 1);
+            this.bodyGraphics.lineStyle(1, 0xe67e22, 1);
+            this.bodyGraphics.beginPath();
+            this.bodyGraphics.arc(0, yOffset, headRadius * 0.6, Math.PI, 0, false);
+            this.bodyGraphics.lineTo(headRadius * 0.8, yOffset + 3);
+            this.bodyGraphics.lineTo(-headRadius * 0.8, yOffset + 3);
+            this.bodyGraphics.closePath();
+            this.bodyGraphics.fillPath();
+            this.bodyGraphics.strokePath();
+        } else if (this.bean.role === BeanRole.EXPLORER) {
+            // Bandana/Cap (Green/Brown)
+            this.bodyGraphics.fillStyle(0x27ae60, 1);
+            this.bodyGraphics.lineStyle(1, 0x2ecc71, 1);
+            this.bodyGraphics.beginPath();
+            this.bodyGraphics.moveTo(-headRadius * 0.6, yOffset - 2);
+            this.bodyGraphics.lineTo(headRadius * 0.6, yOffset - 2);
+            this.bodyGraphics.lineTo(0, yOffset - headRadius * 0.8);
+            this.bodyGraphics.closePath();
+            this.bodyGraphics.fillPath();
+            this.bodyGraphics.strokePath();
+        }
     }
 }

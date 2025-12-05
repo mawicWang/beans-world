@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { IBean, MoveState } from './BeanTypes';
+import { IBean, MoveState, BeanRole } from './BeanTypes';
 import { GameConfig } from '../../config/GameConfig';
 import type GameScene from '../../scenes/GameScene';
 import Food from '../Food';
@@ -87,7 +87,18 @@ export class BeanBrain {
         switch (this.bean.moveState) {
           case MoveState.IDLE:
             const hoardLocation = this.bean.getHoardLocation();
-            if (hoardLocation) {
+
+            // Guards prioritize guarding if near hoard
+            if (this.bean.role === BeanRole.GUARD && hoardLocation) {
+                 const distToHoard = Phaser.Math.Distance.Between(this.bean.x, this.bean.y, hoardLocation.x, hoardLocation.y);
+                 if (distToHoard < this.bean.currentRadius * GameConfig.BEAN.HOARD_RADIUS_MULTIPLIER * 1.5) {
+                     this.bean.moveState = MoveState.GUARDING;
+                     this.bean.isGuarding = true;
+                     this.bean.stateTimer = Phaser.Math.Between(3000, 6000); // Guard longer
+                     break;
+                 }
+            } else if (hoardLocation) {
+                // Non-guards also guard briefly if very close
                 const distToHoard = Phaser.Math.Distance.Between(this.bean.x, this.bean.y, hoardLocation.x, hoardLocation.y);
                 if (distToHoard < this.bean.currentRadius * GameConfig.BEAN.HOARD_RADIUS_MULTIPLIER) {
                     this.bean.moveState = MoveState.GUARDING;
@@ -98,7 +109,11 @@ export class BeanBrain {
             }
 
             if (this.bean.stateTimer <= 0) {
-              if (Math.random() < this.bean.strategy.wanderLust) {
+              let wanderChance = this.bean.strategy.wanderLust;
+              // Workers are more active
+              if (this.bean.role === BeanRole.WORKER) wanderChance += 0.2;
+
+              if (Math.random() < wanderChance) {
                   this.pickTarget();
                   this.bean.moveState = MoveState.CHARGING;
                   this.bean.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
@@ -109,14 +124,26 @@ export class BeanBrain {
             break;
 
           case MoveState.GUARDING:
-              const intruder = this.findIntruder();
-              if (intruder) {
+              // Only Guards and some brave others scan aggressively
+              let scanRange = 1.0;
+              if (this.bean.role === BeanRole.GUARD) scanRange = 1.5;
+              if (this.bean.role === BeanRole.WORKER) scanRange = 0.5; // Workers barely look
+
+              const intruder = this.findIntruder(scanRange);
+
+              if (intruder && (this.bean.role === BeanRole.GUARD || this.bean.role === BeanRole.EXPLORER || Math.random() < 0.3)) {
                   this.bean.moveState = MoveState.CHASING_ENEMY;
                   this.bean.moveTarget = new Phaser.Math.Vector2(intruder.x, intruder.y);
                   break;
               }
 
               if (this.bean.stateTimer <= 0) {
+                  // If worker is guarding, they get bored faster
+                  if (this.bean.role === BeanRole.WORKER && Math.random() < 0.7) {
+                      this.setIdle();
+                      break;
+                  }
+
                   const hLoc = this.bean.getHoardLocation();
                   if (hLoc) {
                       const angle = Math.random() * Math.PI * 2;
@@ -239,18 +266,52 @@ export class BeanBrain {
             break;
 
           case MoveState.HAULING_FOOD:
-              const hLocHaul = this.bean.getHoardLocation();
-              if (!hLocHaul) {
+          case MoveState.BUILDING:
+              // Destination Logic
+              let targetPos: Phaser.Math.Vector2 | null = null;
+              let isBuilding = (this.bean.moveState === MoveState.BUILDING);
+
+              if (isBuilding && this.bean.moveTarget) {
+                  targetPos = this.bean.moveTarget;
+              } else {
+                  // Default Haul to Hoard
+                  const hLoc = this.bean.getHoardLocation();
+                  if (hLoc) targetPos = new Phaser.Math.Vector2(hLoc.x, hLoc.y);
+              }
+
+              if (!targetPos) {
                   this.setIdle();
                   break;
               }
-              this.bean.moveTarget = new Phaser.Math.Vector2(hLocHaul.x, hLocHaul.y);
-              const distToHoard = Phaser.Math.Distance.Between(this.bean.x, this.bean.y, hLocHaul.x, hLocHaul.y);
 
-              if (distToHoard < 30) {
-                  this.bean.dropFood();
+              const distToTarget = Phaser.Math.Distance.Between(this.bean.x, this.bean.y, targetPos.x, targetPos.y);
+
+              if (distToTarget < 40) {
+                  if (isBuilding) {
+                      // Contribute to construction
+                      this.contributeToBuilding();
+                  } else {
+                      // Check if we should switch to building instead of dropping at hoard?
+                      // Only if Worker
+                      if (this.bean.role === BeanRole.WORKER && this.bean.hoardId) {
+                          const sites = this.scene.hoardManager.getConstructionSites(this.bean.hoardId);
+                          if (sites.length > 0) {
+                              // Find closest unfinished site
+                              const site = sites[0]; // Simplification
+                              if (site.progress < site.resourcesNeeded) {
+                                  this.bean.moveState = MoveState.BUILDING;
+                                  this.bean.moveTarget = new Phaser.Math.Vector2(site.x, site.y);
+                                  break; // Next frame we move to site
+                              }
+                          }
+                      }
+
+                      this.bean.dropFood();
+                  }
               } else {
-                 const angle = Phaser.Math.Angle.Between(this.bean.x, this.bean.y, this.bean.moveTarget.x, this.bean.moveTarget.y);
+                 // Movement
+                 this.bean.moveTarget = targetPos; // Ensure target is set
+                 const angle = Phaser.Math.Angle.Between(this.bean.x, this.bean.y, targetPos.x, targetPos.y);
                  this.bean.facingAngle = angle;
                  if (this.bean.stateTimer <= 0) {
                      this.bean.burst();
@@ -354,7 +415,11 @@ export class BeanBrain {
         }
 
         // Stuck Detection
-        const isMovingState = this.bean.moveState === MoveState.CHARGING || this.bean.moveState === MoveState.MOVING_TO_PARTNER;
+        const isMovingState = this.bean.moveState === MoveState.CHARGING ||
+                              this.bean.moveState === MoveState.MOVING_TO_PARTNER ||
+                              this.bean.moveState === MoveState.HAULING_FOOD ||
+                              this.bean.moveState === MoveState.BUILDING;
+
         if (isMovingState && !body.touching.none && body.speed < 20) {
             this.bean.stuckTimer += delta;
             if (this.bean.stuckTimer > 500) {
@@ -363,6 +428,28 @@ export class BeanBrain {
             }
         } else {
             this.bean.stuckTimer = 0;
+        }
+    }
+
+    private contributeToBuilding() {
+        if (!this.bean.carriedFoodData || !this.bean.hoardId) {
+            this.setIdle();
+            return;
+        }
+
+        const sites = this.scene.hoardManager.getConstructionSites(this.bean.hoardId);
+        // Find site near us
+        const site = sites.find(s => Phaser.Math.Distance.Between(this.bean.x, this.bean.y, s.x, s.y) < 60);
+
+        if (site) {
+            const amount = this.bean.carriedFoodData.satiety;
+            site.addProgress(amount);
+            this.bean.carriedFoodData = null; // Used up
+            this.bean.isFull = false; // Reset full status so we can eat again
+            this.setIdle();
+        } else {
+            // Site gone or too far? drop at hoard
+             this.bean.moveState = MoveState.HAULING_FOOD;
         }
     }
 
@@ -379,9 +466,17 @@ export class BeanBrain {
     private pickTarget() {
         let foodTarget: Phaser.GameObjects.GameObject | null = null;
         const hoardLocation = this.bean.getHoardLocation();
+
+        // Workers focus on food more efficiently
+        // const isWorker = this.bean.role === BeanRole.WORKER;
+
         if (!this.bean.isFull) {
             const foods = this.scene.getFoods();
             let baseRange = GameConfig.BEAN.VISION_RADIUS * this.bean.strategy.searchRange;
+
+            // Explorer bonus
+            if (this.bean.role === BeanRole.EXPLORER) baseRange *= 1.5;
+
             let searchRadius = this.bean.satiety < 20 ? baseRange * 5 : baseRange;
             let closestDist = searchRadius;
 
@@ -421,6 +516,11 @@ export class BeanBrain {
             const hoardRadius = this.bean.currentRadius * GameConfig.BEAN.HOARD_RADIUS_MULTIPLIER;
             let maxRadius = hoardRadius * (1 + (1 - this.bean.strategy.riskAversion) * 4);
 
+            // Explorer Bonus: roam much further
+            if (this.bean.role === BeanRole.EXPLORER) {
+                maxRadius *= 2.0;
+            }
+
             if (this.bean.satiety < this.bean.strategy.hungerTolerance) {
                 maxRadius = 10000;
             }
@@ -446,11 +546,11 @@ export class BeanBrain {
         this.bean.moveTarget = new Phaser.Math.Vector2(tx, ty);
     }
 
-    private findIntruder(): IBean | null {
+    private findIntruder(scanMultiplier: number = 1.0): IBean | null {
         const hoardLocation = this.bean.getHoardLocation();
         if (!hoardLocation) return null;
 
-        const vision = GameConfig.BEAN.GUARD_VISION_RADIUS * this.bean.strategy.searchRange;
+        const vision = GameConfig.BEAN.GUARD_VISION_RADIUS * this.bean.strategy.searchRange * scanMultiplier;
         const beans = this.scene.getBeansInRadius(this.bean.x, this.bean.y, vision);
 
         let closestDist = vision;
