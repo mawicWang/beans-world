@@ -4,9 +4,12 @@ import Food from '../objects/Food';
 import Cocoon from '../objects/Cocoon';
 import HoardManager from '../managers/HoardManager';
 import PangolinStatue from '../objects/PangolinStatue';
+import { SpatialGrid } from '../managers/SpatialGrid';
+import { GameConfig } from '../config/GameConfig';
 
 export default class GameScene extends Phaser.Scene {
   private beans: Bean[] = [];
+  public beanGrid!: SpatialGrid<Bean>;
   private cocoons: Cocoon[] = [];
   private beanGroup!: Phaser.Physics.Arcade.Group;
   private foods: Food[] = [];
@@ -22,11 +25,11 @@ export default class GameScene extends Phaser.Scene {
 
   // Manual Timer for Food Spawning (since we don't rely on Phaser's TimeScale for this anymore)
   private foodTimer: number = 0;
-  private readonly FOOD_SPAWN_INTERVAL = 500;
+  // private readonly FOOD_SPAWN_INTERVAL = 500; // Moved to config
 
   // World Bounds
-  private readonly WORLD_WIDTH = 3000;
-  private readonly WORLD_HEIGHT = 3000;
+  // private readonly WORLD_WIDTH = 3000; // Moved to config
+  // private readonly WORLD_HEIGHT = 3000; // Moved to config
 
   // Camera Control State
   private prevPinchDistance: number | null = null;
@@ -40,8 +43,11 @@ export default class GameScene extends Phaser.Scene {
     // Initialize Hoard Manager
     this.hoardManager = new HoardManager(this);
 
+    // Initialize Spatial Grid
+    this.beanGrid = new SpatialGrid<Bean>(GameConfig.WORLD_WIDTH, GameConfig.WORLD_HEIGHT, GameConfig.GRID.CELL_SIZE);
+
     // Create Pangolin Statue in the center
-    const statue = new PangolinStatue(this, this.WORLD_WIDTH / 2, this.WORLD_HEIGHT / 2);
+    const statue = new PangolinStatue(this, GameConfig.WORLD_WIDTH / 2, GameConfig.WORLD_HEIGHT / 2);
 
     // Create physics group for beans
     this.beanGroup = this.physics.add.group();
@@ -74,14 +80,14 @@ export default class GameScene extends Phaser.Scene {
     });
 
     // Draw visual bounds
-    this.drawBounds(this.WORLD_WIDTH, this.WORLD_HEIGHT);
+    this.drawBounds(GameConfig.WORLD_WIDTH, GameConfig.WORLD_HEIGHT);
 
     // Set Physics Boundaries to the larger world
-    this.physics.world.setBounds(0, 0, this.WORLD_WIDTH, this.WORLD_HEIGHT);
+    this.physics.world.setBounds(0, 0, GameConfig.WORLD_WIDTH, GameConfig.WORLD_HEIGHT);
 
     // Setup Camera
-    this.cameras.main.setBounds(0, 0, this.WORLD_WIDTH, this.WORLD_HEIGHT);
-    this.cameras.main.centerOn(this.WORLD_WIDTH / 2, this.WORLD_HEIGHT / 2);
+    this.cameras.main.setBounds(0, 0, GameConfig.WORLD_WIDTH, GameConfig.WORLD_HEIGHT);
+    this.cameras.main.centerOn(GameConfig.WORLD_WIDTH / 2, GameConfig.WORLD_HEIGHT / 2);
 
     // Enable multi-touch (add 1 extra pointer for a total of 2)
     this.input.addPointer(1);
@@ -178,11 +184,11 @@ export default class GameScene extends Phaser.Scene {
     // Beans are now only spawned via the UI button.
   }
 
-  spawnBean(x?: number, y?: number, startSatiety: number = 80, isAdult: boolean = true, attributes: { strength?: number, speed?: number, constitution?: number } = {}, hoardId: string | null = null, strategy?: SurvivalStrategy) {
+  spawnBean(x?: number, y?: number, startSatiety: number = GameConfig.BEAN.START_SATIETY, isAdult: boolean = true, attributes: { strength?: number, speed?: number, constitution?: number } = {}, hoardId: string | null = null, strategy?: SurvivalStrategy) {
     // If no position provided, spawn randomly within the WORLD bounds (not just screen)
     // Avoid edges slightly
-    const spawnX = x ?? Phaser.Math.Between(50, this.WORLD_WIDTH - 50);
-    const spawnY = y ?? Phaser.Math.Between(50, this.WORLD_HEIGHT - 50);
+    const spawnX = x ?? Phaser.Math.Between(50, GameConfig.WORLD_WIDTH - 50);
+    const spawnY = y ?? Phaser.Math.Between(50, GameConfig.WORLD_HEIGHT - 50);
 
     const bean = new Bean(this, spawnX, spawnY, startSatiety, isAdult, this.areStatsVisible, this.areHoardLinesVisible, attributes, hoardId, strategy);
     this.add.existing(bean);
@@ -272,9 +278,9 @@ export default class GameScene extends Phaser.Scene {
 
     // 3. Update Manual Food Timer
     this.foodTimer += totalSimTime; // Use totalSimTime which includes speed factor
-    if (this.foodTimer >= this.FOOD_SPAWN_INTERVAL) {
+    if (this.foodTimer >= GameConfig.FOOD.SPAWN_INTERVAL) {
         this.spawnFood();
-        this.foodTimer -= this.FOOD_SPAWN_INTERVAL;
+        this.foodTimer -= GameConfig.FOOD.SPAWN_INTERVAL;
     }
   }
 
@@ -352,8 +358,8 @@ export default class GameScene extends Phaser.Scene {
   public spawnFood() {
       // Spawn anywhere in the WORLD
       const padding = 50;
-      const x = Phaser.Math.Between(padding, this.WORLD_WIDTH - padding);
-      const y = Phaser.Math.Between(padding, this.WORLD_HEIGHT - padding);
+      const x = Phaser.Math.Between(padding, GameConfig.WORLD_WIDTH - padding);
+      const y = Phaser.Math.Between(padding, GameConfig.WORLD_HEIGHT - padding);
 
       const typeRoll = Math.random();
       let satiety = 1;
@@ -400,11 +406,16 @@ export default class GameScene extends Phaser.Scene {
       if (index > -1) {
           this.beans.splice(index, 1);
       }
+      this.beanGrid.remove(bean); // Remove from grid
       this.beanGroup.remove(bean);
       bean.destroy();
 
       this.registry.set('beanCount', this.beans.length);
       this.game.events.emit('UPDATE_BEAN_COUNT', this.beans.length);
+  }
+
+  public getBeansInRadius(x: number, y: number, radius: number): Bean[] {
+      return this.beanGrid.query(x, y, radius);
   }
 
   private checkBeanCollision(obj1: any, obj2: any): boolean {

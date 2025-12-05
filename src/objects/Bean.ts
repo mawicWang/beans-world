@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import type GameScene from '../scenes/GameScene';
 import Food from './Food';
+import { ISpatialObject } from '../managers/SpatialGrid';
+import { GameConfig } from '../config/GameConfig';
 
 export enum MoveState {
   IDLE,
@@ -26,7 +28,7 @@ export interface SurvivalStrategy {
   aggression: number;       // Scalar: Multiplier for chase distance (Strategy 9)
 }
 
-export default class Bean extends Phaser.GameObjects.Container {
+export default class Bean extends Phaser.GameObjects.Container implements ISpatialObject {
   private bodyGraphics: Phaser.GameObjects.Graphics;
   private statusPanel: Phaser.GameObjects.Container;
   private statusText: Phaser.GameObjects.Text;
@@ -66,13 +68,13 @@ export default class Bean extends Phaser.GameObjects.Container {
   private tailVelocity: Phaser.Math.Vector2;
 
   // Stats
-  public satiety: number = 80;
+  public satiety: number = GameConfig.BEAN.START_SATIETY;
   public isAdult: boolean = true;
   private age: number = 0;
   private reproCooldown: number = 0;
-  private readonly MATURITY_AGE = 60000; // 1 minute to grow up
-  private readonly VISION_RADIUS = 200;
-  private readonly GUARD_VISION_RADIUS = 300;
+  // private readonly MATURITY_AGE = 60000; // Moved to config
+  // private readonly VISION_RADIUS = 200; // Moved to config
+  // private readonly GUARD_VISION_RADIUS = 300; // Moved to config
   private isFull: boolean = false;
 
   // Attributes
@@ -82,17 +84,17 @@ export default class Bean extends Phaser.GameObjects.Container {
   private maxSatiety: number = 100;
 
   // Attribute Constraints
-  public static readonly MIN_ATTR = 1;
-  public static readonly MAX_ATTR = 20;
+  public static readonly MIN_ATTR = GameConfig.BEAN.MIN_ATTR;
+  public static readonly MAX_ATTR = GameConfig.BEAN.MAX_ATTR;
 
   // Constants
-  private readonly SPRING_STIFFNESS = 0.1;
-  private readonly SPRING_DAMPING = 0.6;
-  private readonly ROPE_LENGTH = 0; // Slack length for "rope" feel
-  private readonly CHARGE_DURATION = 300; // ms
-  private readonly IDLE_DURATION_MIN = 500;
-  private readonly IDLE_DURATION_MAX = 2000;
-  private readonly MAX_CHASE_DIST = 500;
+  // private readonly SPRING_STIFFNESS = 0.1; // Moved to config
+  // private readonly SPRING_DAMPING = 0.6; // Moved to config
+  // private readonly ROPE_LENGTH = 0; // Moved to config
+  // private readonly CHARGE_DURATION = 300; // Moved to config
+  // private readonly IDLE_DURATION_MIN = 500; // Moved to config
+  // private readonly IDLE_DURATION_MAX = 2000; // Moved to config
+  // private readonly MAX_CHASE_DIST = 500; // Moved to config
 
   // Visuals
   private adultRadius = 15;
@@ -100,14 +102,14 @@ export default class Bean extends Phaser.GameObjects.Container {
   private mainColor: number = 0xffffff;
 
   private get hoardRadius(): number {
-      return this.adultRadius * 2.5;
+      return this.adultRadius * GameConfig.BEAN.HOARD_RADIUS_MULTIPLIER;
   }
 
   constructor(
       scene: Phaser.Scene,
       x: number,
       y: number,
-      startSatiety: number = 80,
+      startSatiety: number = GameConfig.BEAN.START_SATIETY,
       startAdult: boolean = true,
       showStats: boolean = false,
       showHoardLines: boolean = false,
@@ -146,7 +148,7 @@ export default class Bean extends Phaser.GameObjects.Container {
     }
 
     // Calculate derived stats
-    this.maxSatiety = 80 + (this.constitution * 2); // Range 82 - 120
+    this.maxSatiety = GameConfig.BEAN.MAX_SATIETY_BASE + (this.constitution * GameConfig.BEAN.MAX_SATIETY_CON_MULT);
     this.adultRadius = 10 + (this.constitution * 0.5); // Range 10.5 - 20
     this.currentRadius = this.isAdult ? this.adultRadius : this.adultRadius * 0.6;
 
@@ -226,7 +228,7 @@ export default class Bean extends Phaser.GameObjects.Container {
     this.isSeekingMate = false;
     this.isGuarding = false;
     this.lockedPartner = null;
-    this.stateTimer = Phaser.Math.Between(this.IDLE_DURATION_MIN, this.IDLE_DURATION_MAX);
+    this.stateTimer = Phaser.Math.Between(GameConfig.BEAN.IDLE_DURATION_MIN, GameConfig.BEAN.IDLE_DURATION_MAX);
     this.moveTarget = null;
   }
 
@@ -355,9 +357,17 @@ export default class Bean extends Phaser.GameObjects.Container {
     // 0. Growth & Lifecycle
     if (!this.isAdult) {
         this.age += delta;
-        if (this.age >= this.MATURITY_AGE) {
+        if (this.age >= GameConfig.BEAN.MATURITY_AGE) {
             this.growUp();
         }
+    }
+
+    // Update Spatial Grid
+    // We update this less frequently or only when moving significant distance could be better,
+    // but updating every frame ensures correctness. The grid update is O(1) mostly.
+    const scene = this.scene as unknown as GameScene;
+    if (scene.beanGrid) {
+        scene.beanGrid.update(this);
     }
 
     if (this.reproCooldown > 0) {
@@ -443,10 +453,10 @@ export default class Bean extends Phaser.GameObjects.Container {
           if (Math.random() < this.strategy.wanderLust) {
               this.pickTarget();
               this.moveState = MoveState.CHARGING;
-              this.stateTimer = this.CHARGE_DURATION;
+              this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
           } else {
               // Stay idle again
-              this.stateTimer = Phaser.Math.Between(this.IDLE_DURATION_MIN, this.IDLE_DURATION_MAX);
+              this.stateTimer = Phaser.Math.Between(GameConfig.BEAN.IDLE_DURATION_MIN, GameConfig.BEAN.IDLE_DURATION_MAX);
           }
         }
         break;
@@ -473,7 +483,7 @@ export default class Bean extends Phaser.GameObjects.Container {
                   );
                   // We switch to charging to move there, but we need to remember we are guarding.
                   this.moveState = MoveState.CHARGING;
-                  this.stateTimer = this.CHARGE_DURATION;
+                  this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
               } else {
                   this.setIdle();
               }
@@ -489,7 +499,7 @@ export default class Bean extends Phaser.GameObjects.Container {
            if (hLocChase) {
                const distToHoard = Phaser.Math.Distance.Between(this.x, this.y, hLocChase.x, hLocChase.y);
                // Strategy 9: Chase Distance = Base * Aggression
-               const maxChase = this.MAX_CHASE_DIST * this.strategy.aggression;
+               const maxChase = GameConfig.BEAN.MAX_CHASE_DIST * this.strategy.aggression;
                if (distToHoard > maxChase) {
                    // Abandon chase
                    this.moveTarget = null;
@@ -505,7 +515,7 @@ export default class Bean extends Phaser.GameObjects.Container {
 
                if (this.stateTimer <= 0) {
                    this.burst();
-                   this.stateTimer = this.CHARGE_DURATION;
+                   this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
                }
            } else {
                // Enemy lost or gone
@@ -545,7 +555,7 @@ export default class Bean extends Phaser.GameObjects.Container {
         if (mate) {
              // Check if we should lock
              // Distance threshold to commit? Let's say if within vision (Strategy 7 affects vision)
-             const vision = this.VISION_RADIUS * this.strategy.searchRange;
+             const vision = GameConfig.BEAN.VISION_RADIUS * this.strategy.searchRange;
              const dist = Phaser.Math.Distance.Between(this.x, this.y, mate.x, mate.y);
              if (dist < vision) {
                  // Lock!
@@ -560,7 +570,7 @@ export default class Bean extends Phaser.GameObjects.Container {
                  // Burst movement (only if we have a target)
                  if (this.stateTimer <= 0) {
                     this.burst();
-                    this.stateTimer = this.CHARGE_DURATION;
+                    this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
                  }
              }
         } else {
@@ -584,7 +594,7 @@ export default class Bean extends Phaser.GameObjects.Container {
 
                       if (this.stateTimer <= 0) {
                           this.burst();
-                          this.stateTimer = this.CHARGE_DURATION * 2; // Move slower/less often
+                          this.stateTimer = GameConfig.BEAN.CHARGE_DURATION * 2; // Move slower/less often
                       }
                  } else {
                      // Fallback if guard has no hoard (shouldn't happen often)
@@ -604,7 +614,7 @@ export default class Bean extends Phaser.GameObjects.Container {
                  // Burst movement
                  if (this.stateTimer <= 0) {
                     this.burst();
-                    this.stateTimer = this.CHARGE_DURATION;
+                    this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
                  }
              }
         }
@@ -627,7 +637,7 @@ export default class Bean extends Phaser.GameObjects.Container {
              this.facingAngle = angle;
              if (this.stateTimer <= 0) {
                  this.burst();
-                 this.stateTimer = this.CHARGE_DURATION;
+                 this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
              }
           }
           break;
@@ -657,7 +667,7 @@ export default class Bean extends Phaser.GameObjects.Container {
           // Burst movement
           if (this.stateTimer <= 0) {
             this.burst();
-            this.stateTimer = this.CHARGE_DURATION;
+            this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
           }
           break;
 
@@ -708,17 +718,17 @@ export default class Bean extends Phaser.GameObjects.Container {
                  this.moveState = MoveState.SEEKING_MATE;
             } else if (this.previousState === MoveState.HAULING_FOOD) {
                  this.moveState = MoveState.HAULING_FOOD;
-                 this.stateTimer = this.CHARGE_DURATION;
+                 this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
             } else if (this.previousState === MoveState.CHASING_ENEMY) {
                  this.moveState = MoveState.CHASING_ENEMY;
-                 this.stateTimer = this.CHARGE_DURATION;
+                 this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
             } else if (this.previousState === MoveState.GUARDING) {
                  this.moveState = MoveState.GUARDING;
                  this.stateTimer = 2000;
             } else {
                  this.moveState = MoveState.CHARGING;
             }
-            this.stateTimer = this.CHARGE_DURATION;
+            this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
         } else if (body.speed < 10) {
            body.setVelocity(0,0);
 
@@ -776,12 +786,12 @@ export default class Bean extends Phaser.GameObjects.Container {
     let ay = 0;
 
     // Apply force only if distance exceeds rope length (slack)
-    if (currentDist > this.ROPE_LENGTH) {
-        const force = (currentDist - this.ROPE_LENGTH) * this.SPRING_STIFFNESS;
+    if (currentDist > GameConfig.BEAN.ROPE_LENGTH) {
+        const force = (currentDist - GameConfig.BEAN.ROPE_LENGTH) * GameConfig.BEAN.SPRING_STIFFNESS;
         ax = (dx / currentDist) * force;
         ay = (dy / currentDist) * force;
     } else {
-         const force = currentDist * this.SPRING_STIFFNESS;
+         const force = currentDist * GameConfig.BEAN.SPRING_STIFFNESS;
          if (currentDist > 0) {
              ax = (dx / currentDist) * force;
              ay = (dy / currentDist) * force;
@@ -793,8 +803,8 @@ export default class Bean extends Phaser.GameObjects.Container {
     this.tailVelocity.y += ay * dt;
 
     // Damping
-    this.tailVelocity.x *= Math.pow(this.SPRING_DAMPING, dt);
-    this.tailVelocity.y *= Math.pow(this.SPRING_DAMPING, dt);
+    this.tailVelocity.x *= Math.pow(GameConfig.BEAN.SPRING_DAMPING, dt);
+    this.tailVelocity.y *= Math.pow(GameConfig.BEAN.SPRING_DAMPING, dt);
 
     // Update position (Velocity * dt)
     this.tailPos.x += this.tailVelocity.x * dt;
@@ -813,9 +823,9 @@ export default class Bean extends Phaser.GameObjects.Container {
     const separationForce = new Phaser.Math.Vector2(0, 0);
 
     const scene = this.scene as unknown as GameScene;
-    if (typeof scene.getBeans !== 'function') return separationForce;
-
-    const beans = scene.getBeans();
+    // Use Grid: check nearby beans within separationRadius
+    // Grid query uses box, so it's a bit approximate but fine
+    const beans = scene.getBeansInRadius(this.x, this.y, separationRadius);
     let count = 0;
 
     for (const other of beans) {
@@ -848,11 +858,12 @@ export default class Bean extends Phaser.GameObjects.Container {
       if (!hoardLocation) return null;
 
       const scene = this.scene as unknown as GameScene;
-      const beans = scene.getBeans();
-
-      // Look for nearest bean that is NOT self
       // Strategy 7: Search Range (Visual)
-      let vision = this.GUARD_VISION_RADIUS * this.strategy.searchRange;
+      const vision = GameConfig.BEAN.GUARD_VISION_RADIUS * this.strategy.searchRange;
+
+      // Use Grid: Get potential intruders within vision range
+      const beans = scene.getBeansInRadius(this.x, this.y, vision);
+
       let closestDist = vision;
       let target: Bean | null = null;
 
@@ -882,8 +893,14 @@ export default class Bean extends Phaser.GameObjects.Container {
 
   private findClosestMate(): Bean | null {
       const scene = this.scene as unknown as GameScene;
-      const beans = scene.getBeans();
-      let closestDist = Infinity;
+      // Optimize: Search only within reasonable range (e.g., screen width or larger vision)
+      // If none found nearby, maybe random roaming handles the rest.
+      // Let's search in a fairly large radius to mimic "hearing" or "smelling" mates?
+      // Or just stick to visual range * searchRange for now to keep it consistent.
+      const range = GameConfig.BEAN.VISION_RADIUS * this.strategy.searchRange * 2; // Look a bit further for mates
+
+      const beans = scene.getBeansInRadius(this.x, this.y, range);
+      let closestDist = range;
       let target: Bean | null = null;
 
       for (const other of beans) {
@@ -918,7 +935,7 @@ export default class Bean extends Phaser.GameObjects.Container {
         const foods = scene.getFoods();
         // Strategy 7: Search Range
         // If starving (satiety < 20), multiply range by 5
-        let baseRange = this.VISION_RADIUS * this.strategy.searchRange;
+        let baseRange = GameConfig.BEAN.VISION_RADIUS * this.strategy.searchRange;
         let searchRadius = this.satiety < 20 ? baseRange * 5 : baseRange;
         let closestDist = searchRadius;
 
@@ -1003,7 +1020,7 @@ export default class Bean extends Phaser.GameObjects.Container {
           if (type === 'constitution') {
               this.constitution = Phaser.Math.Clamp(this.constitution + value, Bean.MIN_ATTR, Bean.MAX_ATTR);
               // Update derived stats from constitution
-              this.maxSatiety = 80 + (this.constitution * 2);
+              this.maxSatiety = GameConfig.BEAN.MAX_SATIETY_BASE + (this.constitution * GameConfig.BEAN.MAX_SATIETY_CON_MULT);
               this.adultRadius = 10 + (this.constitution * 0.5);
               if (this.isAdult) {
                   this.currentRadius = this.adultRadius;
@@ -1083,47 +1100,60 @@ export default class Bean extends Phaser.GameObjects.Container {
 
     const alpha = Phaser.Math.Clamp(0.4 + (this.satiety / this.maxSatiety) * 0.6, 0.4, 1.0);
 
-    let dist = tailOffset.length();
-    if (dist < 0.5) dist = 0;
-
-    const stretchFactor = Math.min(dist, 100) / 100;
-
-    const headRadius = this.currentRadius * (1 + stretchFactor * 0.2);
-    const tailRadius = this.currentRadius * (1 - stretchFactor * 0.7);
-
-    const hx = 0;
-    const hy = 0;
-    const tx = tailOffset.x;
-    const ty = tailOffset.y;
+    // LOD: Check zoom level
+    const zoom = this.scene.cameras.main.zoom;
+    const isZoomedOut = zoom < 0.5;
 
     this.bodyGraphics.fillStyle(this.mainColor, alpha);
     this.bodyGraphics.lineStyle(2, 0x1a5f8a, alpha);
 
-    const angle = Phaser.Math.Angle.Between(tx, ty, hx, hy);
+    // Detailed Jelly Shape (computed even if not drawn fully if needed for other visuals, but we can optimize)
+    let headRadius = this.currentRadius; // Default for low LOD
 
-    let offsetAngle = Math.PI / 2;
-    const rDiff = headRadius - tailRadius;
-    if (dist > Math.abs(rDiff)) {
-        offsetAngle = Math.acos(rDiff / dist);
+    if (isZoomedOut) {
+        // Simple Circle for LOD
+        this.bodyGraphics.fillCircle(0, 0, this.currentRadius);
+        this.bodyGraphics.strokeCircle(0, 0, this.currentRadius);
+    } else {
+        let dist = tailOffset.length();
+        if (dist < 0.5) dist = 0;
+
+        const stretchFactor = Math.min(dist, 100) / 100;
+
+        headRadius = this.currentRadius * (1 + stretchFactor * 0.2);
+        const tailRadius = this.currentRadius * (1 - stretchFactor * 0.7);
+
+        const hx = 0;
+        const hy = 0;
+        const tx = tailOffset.x;
+        const ty = tailOffset.y;
+
+        const angle = Phaser.Math.Angle.Between(tx, ty, hx, hy);
+
+        let offsetAngle = Math.PI / 2;
+        const rDiff = headRadius - tailRadius;
+        if (dist > Math.abs(rDiff)) {
+            offsetAngle = Math.acos(rDiff / dist);
+        }
+
+        const h2x = hx + Math.cos(angle - offsetAngle) * headRadius;
+        const h2y = hy + Math.sin(angle - offsetAngle) * headRadius;
+
+        const t1x = tx + Math.cos(angle + offsetAngle) * tailRadius;
+        const t1y = ty + Math.sin(angle + offsetAngle) * tailRadius;
+
+        this.bodyGraphics.beginPath();
+        this.bodyGraphics.arc(hx, hy, headRadius, angle - offsetAngle, angle + offsetAngle, false);
+        this.bodyGraphics.lineTo(t1x, t1y);
+        this.bodyGraphics.arc(tx, ty, tailRadius, angle + offsetAngle, angle - offsetAngle, false);
+        this.bodyGraphics.lineTo(h2x, h2y);
+        this.bodyGraphics.closePath();
+
+        this.bodyGraphics.fillPath();
+        this.bodyGraphics.strokePath();
     }
 
-    const h2x = hx + Math.cos(angle - offsetAngle) * headRadius;
-    const h2y = hy + Math.sin(angle - offsetAngle) * headRadius;
-
-    const t1x = tx + Math.cos(angle + offsetAngle) * tailRadius;
-    const t1y = ty + Math.sin(angle + offsetAngle) * tailRadius;
-
-    this.bodyGraphics.beginPath();
-    this.bodyGraphics.arc(hx, hy, headRadius, angle - offsetAngle, angle + offsetAngle, false);
-    this.bodyGraphics.lineTo(t1x, t1y);
-    this.bodyGraphics.arc(tx, ty, tailRadius, angle + offsetAngle, angle - offsetAngle, false);
-    this.bodyGraphics.lineTo(h2x, h2y);
-    this.bodyGraphics.closePath();
-
-    this.bodyGraphics.fillPath();
-    this.bodyGraphics.strokePath();
-
-    if (this.hoardId && this.showHoardLines) {
+    if (this.hoardId && this.showHoardLines && !isZoomedOut) { // Hide lines in low LOD too?
         const hoardLocation = this.getHoardLocation();
         if (hoardLocation) {
             this.bodyGraphics.lineStyle(2, 0xffffff, 0.5);
