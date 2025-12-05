@@ -55,6 +55,9 @@ export default class GameScene extends Phaser.Scene {
     // Add collision between beans and statue
     this.physics.add.collider(this.beanGroup, statue);
 
+    // Add collision between beans and structures (Town Centers)
+    this.physics.add.collider(this.beanGroup, this.hoardManager.getGroup());
+
     // Create physics group for food
     this.foodGroup = this.physics.add.group();
 
