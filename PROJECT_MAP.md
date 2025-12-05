@@ -24,7 +24,12 @@ This document provides a high-level overview of the file structure and the respo
 *   `src/scenes/DevScene.ts`: A development scene for testing specific behaviors (e.g., reproduction) in isolation.
 
 ### Objects (`src/objects/`)
-*   `src/objects/Bean.ts`: The main entity. Handles Bean logic, rendering, FSM (states), genetics, physics, and behavior.
+*   `src/objects/Bean.ts`: The main entity. Orchestrates `BeanBrain`, `BeanPhysics`, and `BeanRenderer` components.
+*   `src/objects/bean/`: Directory containing Bean components.
+    *   `BeanBrain.ts`: AI logic, Finite State Machine (FSM), and decision making.
+    *   `BeanPhysics.ts`: Movement physics, forces, and tail simulation.
+    *   `BeanRenderer.ts`: Visual rendering and animations.
+    *   `BeanTypes.ts`: Shared interfaces and enums (`IBean`, `MoveState`, `SurvivalStrategy`).
 *   `src/objects/Cocoon.ts`: Represents the gestation phase of reproduction. Spawns offspring Beans.
 *   `src/objects/Food.ts`: Food items that Beans consume.
 
