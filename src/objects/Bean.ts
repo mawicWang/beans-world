@@ -346,428 +346,421 @@ export default class Bean extends Phaser.GameObjects.Container implements ISpati
     this.combatTimer = 500; // Show combat icon for 0.5s
   }
 
-  update(_time: number, delta: number, render: boolean = true) {
-    const body = this.body as Phaser.Physics.Arcade.Body;
-    if (!body) return; // Safety check in case update is called before physics setup
+  think(_time: number, delta: number) {
+      if (!this.active) return;
+      const body = this.body as Phaser.Physics.Arcade.Body;
+      if (!body) return;
 
-    if (this.combatTimer > 0) {
-      this.combatTimer -= delta;
-    }
+      if (this.combatTimer > 0) {
+        this.combatTimer -= delta;
+      }
 
-    // 0. Growth & Lifecycle
-    if (!this.isAdult) {
-        this.age += delta;
-        if (this.age >= GameConfig.BEAN.MATURITY_AGE) {
-            this.growUp();
-        }
-    }
-
-    // Update Spatial Grid
-    // We update this less frequently or only when moving significant distance could be better,
-    // but updating every frame ensures correctness. The grid update is O(1) mostly.
-    const scene = this.scene as unknown as GameScene;
-    if (scene.beanGrid) {
-        scene.beanGrid.update(this);
-    }
-
-    if (this.reproCooldown > 0) {
-        this.reproCooldown -= delta;
-    }
-
-    // 0.5. Satiety Decay
-    const decayRate = body.speed > 5 ? 0.5 : 0.1;
-    this.satiety -= decayRate * (delta / 1000);
-
-    // Update stats text (can be expensive to do every frame, maybe throttle?)
-    // For now, doing it every frame as per previous pattern
-    this.statusText.setText(this.getStatsText());
-
-    if (this.satiety <= 0) {
-        // Die
-        const scene = this.scene as unknown as GameScene;
-        scene.removeBean(this);
-        return;
-    } else if (this.satiety >= this.maxSatiety) {
-        this.satiety = this.maxSatiety;
-        this.isFull = true;
-    } else if (this.satiety < this.maxSatiety * 0.9) {
-        this.isFull = false;
-    }
-
-    // Reproduction Trigger Check (Strategy 6: Mating Threshold)
-    // Allow triggering from IDLE or GUARDING states
-    if (this.isAdult && this.satiety > this.strategy.matingThreshold && this.reproCooldown <= 0 &&
-       (this.moveState === MoveState.IDLE || this.moveState === MoveState.GUARDING)) {
-         // Probability check based on satiety surplus above threshold
-         const surplus = Math.max(0, this.satiety - this.strategy.matingThreshold);
-         const baseChance = Math.pow(surplus, 2);
-         const k = 0.000125;
-         const probabilityPerSecond = baseChance * k;
-
-         // Convert to per-frame probability based on delta (ms)
-         const frameProbability = probabilityPerSecond * (delta / 1000);
-
-         if (Math.random() < frameProbability) {
-             this.moveState = MoveState.SEEKING_MATE;
-             this.isSeekingMate = true;
-             // Stop guarding behavior so they can leave territory to find a mate
-             this.isGuarding = false;
-         }
-    }
-
-    // Stop seeking if satiety drops too low (Strategy 6)
-    if (this.isSeekingMate && this.satiety < this.strategy.matingThreshold) {
-        // If we had a partner, they need to know we broke up
-        if (this.lockedPartner) {
-             this.lockedPartner = null;
-        }
-
-        this.isSeekingMate = false;
-        this.setIdle();
-    }
-
-    // 1. State Machine
-    if (this.stateTimer > 0) {
-      this.stateTimer -= delta;
-    }
-
-    switch (this.moveState) {
-      case MoveState.IDLE:
-        // Transition to Guarding if near hoard
-        const hoardLocation = this.getHoardLocation();
-        if (hoardLocation) {
-            const distToHoard = Phaser.Math.Distance.Between(this.x, this.y, hoardLocation.x, hoardLocation.y);
-            if (distToHoard < this.hoardRadius) {
-                this.moveState = MoveState.GUARDING;
-                this.isGuarding = true;
-                this.stateTimer = Phaser.Math.Between(2000, 4000); // Guard duty duration before checking again or moving slightly
-                break;
-            }
-        }
-
-        if (this.stateTimer <= 0) {
-          // Strategy 1: Idle vs Random Walk
-          // If wanderLust is high, move often. If low, stay idle more.
-          // Since stateTimer <= 0 means we finished idling, we now choose: move or idle again?
-          // We always call pickTarget currently, but let's change that.
-          if (Math.random() < this.strategy.wanderLust) {
-              this.pickTarget();
-              this.moveState = MoveState.CHARGING;
-              this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
-          } else {
-              // Stay idle again
-              this.stateTimer = Phaser.Math.Between(GameConfig.BEAN.IDLE_DURATION_MIN, GameConfig.BEAN.IDLE_DURATION_MAX);
+      // 0. Growth & Lifecycle
+      if (!this.isAdult) {
+          this.age += delta;
+          if (this.age >= GameConfig.BEAN.MATURITY_AGE) {
+              this.growUp();
           }
-        }
-        break;
+      }
 
-      case MoveState.GUARDING:
-          // Scan for intruders
-          const intruder = this.findIntruder();
-          if (intruder) {
-              this.moveState = MoveState.CHASING_ENEMY;
-              this.moveTarget = new Phaser.Math.Vector2(intruder.x, intruder.y);
-              break;
+      // Update Spatial Grid
+      const scene = this.scene as unknown as GameScene;
+      if (scene.beanGrid) {
+          scene.beanGrid.update(this);
+      }
+
+      if (this.reproCooldown > 0) {
+          this.reproCooldown -= delta;
+      }
+
+      // 0.5. Satiety Decay
+      const decayRate = body.speed > 5 ? 0.5 : 0.1;
+      this.satiety -= decayRate * (delta / 1000);
+
+      // Update stats text
+      this.statusText.setText(this.getStatsText());
+
+      if (this.satiety <= 0) {
+          // Die
+          scene.removeBean(this);
+          return;
+      } else if (this.satiety >= this.maxSatiety) {
+          this.satiety = this.maxSatiety;
+          this.isFull = true;
+      } else if (this.satiety < this.maxSatiety * 0.9) {
+          this.isFull = false;
+      }
+
+      // Reproduction Trigger Check (Strategy 6: Mating Threshold)
+      if (this.isAdult && this.satiety > this.strategy.matingThreshold && this.reproCooldown <= 0 &&
+         (this.moveState === MoveState.IDLE || this.moveState === MoveState.GUARDING)) {
+           // Probability check based on satiety surplus above threshold
+           const surplus = Math.max(0, this.satiety - this.strategy.matingThreshold);
+           const baseChance = Math.pow(surplus, 2);
+           const k = 0.000125;
+           const probabilityPerSecond = baseChance * k;
+
+           // Convert to per-frame probability based on delta (ms)
+           const frameProbability = probabilityPerSecond * (delta / 1000);
+
+           if (Math.random() < frameProbability) {
+               this.moveState = MoveState.SEEKING_MATE;
+               this.isSeekingMate = true;
+               // Stop guarding behavior so they can leave territory to find a mate
+               this.isGuarding = false;
+           }
+      }
+
+      // Stop seeking if satiety drops too low (Strategy 6)
+      if (this.isSeekingMate && this.satiety < this.strategy.matingThreshold) {
+          // If we had a partner, they need to know we broke up
+          if (this.lockedPartner) {
+               this.lockedPartner = null;
           }
 
-          // Patrol behavior (small movements around hoard)
-          if (this.stateTimer <= 0) {
-              // Pick a point near hoard
-              const hLoc = this.getHoardLocation();
-              if (hLoc) {
-                  const angle = Math.random() * Math.PI * 2;
-                  const dist = Math.random() * this.hoardRadius;
-                  this.moveTarget = new Phaser.Math.Vector2(
-                      hLoc.x + Math.cos(angle) * dist,
-                      hLoc.y + Math.sin(angle) * dist
-                  );
-                  // We switch to charging to move there, but we need to remember we are guarding.
-                  this.moveState = MoveState.CHARGING;
-                  this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
-              } else {
-                  this.setIdle();
+          this.isSeekingMate = false;
+          this.setIdle();
+      }
+
+      // 1. State Machine
+      if (this.stateTimer > 0) {
+        this.stateTimer -= delta;
+      }
+
+      switch (this.moveState) {
+        case MoveState.IDLE:
+          // Transition to Guarding if near hoard
+          const hoardLocation = this.getHoardLocation();
+          if (hoardLocation) {
+              const distToHoard = Phaser.Math.Distance.Between(this.x, this.y, hoardLocation.x, hoardLocation.y);
+              if (distToHoard < this.hoardRadius) {
+                  this.moveState = MoveState.GUARDING;
+                  this.isGuarding = true;
+                  this.stateTimer = Phaser.Math.Between(2000, 4000); // Guard duty duration before checking again or moving slightly
+                  break;
               }
+          }
+
+          if (this.stateTimer <= 0) {
+            // Strategy 1: Idle vs Random Walk
+            if (Math.random() < this.strategy.wanderLust) {
+                this.pickTarget();
+                this.moveState = MoveState.CHARGING;
+                this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
+            } else {
+                // Stay idle again
+                this.stateTimer = Phaser.Math.Between(GameConfig.BEAN.IDLE_DURATION_MIN, GameConfig.BEAN.IDLE_DURATION_MAX);
+            }
           }
           break;
 
-      case MoveState.CHASING_ENEMY:
-          // Chase logic
-           const enemy = this.findIntruder();
+        case MoveState.GUARDING:
+            // Scan for intruders
+            const intruder = this.findIntruder();
+            if (intruder) {
+                this.moveState = MoveState.CHASING_ENEMY;
+                this.moveTarget = new Phaser.Math.Vector2(intruder.x, intruder.y);
+                break;
+            }
 
-           // Check distance to hoard if we have one
-           const hLocChase = this.getHoardLocation();
-           if (hLocChase) {
-               const distToHoard = Phaser.Math.Distance.Between(this.x, this.y, hLocChase.x, hLocChase.y);
-               // Strategy 9: Chase Distance = Base * Aggression
-               const maxChase = GameConfig.BEAN.MAX_CHASE_DIST * this.strategy.aggression;
-               if (distToHoard > maxChase) {
-                   // Abandon chase
-                   this.moveTarget = null;
-                   this.setIdle();
-                   break;
+            // Patrol behavior (small movements around hoard)
+            if (this.stateTimer <= 0) {
+                // Pick a point near hoard
+                const hLoc = this.getHoardLocation();
+                if (hLoc) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const dist = Math.random() * this.hoardRadius;
+                    this.moveTarget = new Phaser.Math.Vector2(
+                        hLoc.x + Math.cos(angle) * dist,
+                        hLoc.y + Math.sin(angle) * dist
+                    );
+                    this.moveState = MoveState.CHARGING;
+                    this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
+                } else {
+                    this.setIdle();
+                }
+            }
+            break;
+
+        case MoveState.CHASING_ENEMY:
+             // Chase logic
+             const enemy = this.findIntruder();
+
+             // Check distance to hoard if we have one
+             const hLocChase = this.getHoardLocation();
+             if (hLocChase) {
+                 const distToHoard = Phaser.Math.Distance.Between(this.x, this.y, hLocChase.x, hLocChase.y);
+                 // Strategy 9: Chase Distance = Base * Aggression
+                 const maxChase = GameConfig.BEAN.MAX_CHASE_DIST * this.strategy.aggression;
+                 if (distToHoard > maxChase) {
+                     // Abandon chase
+                     this.moveTarget = null;
+                     this.setIdle();
+                     break;
+                 }
+             }
+
+             if (enemy) {
+                 this.moveTarget = new Phaser.Math.Vector2(enemy.x, enemy.y);
+                 const angle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
+                 this.facingAngle = angle;
+
+                 if (this.stateTimer <= 0) {
+                     this.burst();
+                     this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
+                 }
+             } else {
+                 // Enemy lost or gone
+                 this.setIdle();
+             }
+             break;
+
+        case MoveState.FLEEING:
+             if (this.stateTimer <= 0) {
+                 this.setIdle();
+             } else {
+                 // Continue fleeing
+                 if (this.moveTarget) {
+                      const angle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
+                      this.facingAngle = angle;
+                      // Actual velocity application happens in update() for physics smoothness
+                 }
+             }
+             break;
+
+        case MoveState.SEEKING_MATE:
+          // 0. Priority: Defend against intruders even while seeking mate
+          const matingIntruder = this.findIntruder();
+          if (matingIntruder) {
+               this.moveState = MoveState.CHASING_ENEMY;
+               this.moveTarget = new Phaser.Math.Vector2(matingIntruder.x, matingIntruder.y);
+               break;
+          }
+
+          // Try to find a mate who is also seeking and not locked
+          const mate = this.findClosestMate();
+
+          if (mate) {
+               // Check if we should lock
+               const vision = GameConfig.BEAN.VISION_RADIUS * this.strategy.searchRange;
+               const dist = Phaser.Math.Distance.Between(this.x, this.y, mate.x, mate.y);
+               if (dist < vision) {
+                   // Lock!
+                   this.lockPartner(mate);
+                   mate.lockPartner(this);
+               } else {
+                   // Just move towards them
+                   this.moveTarget = new Phaser.Math.Vector2(mate.x, mate.y);
+                   const targetAngle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
+                   this.facingAngle = targetAngle;
+
+                   // Burst movement (only if we have a target)
+                   if (this.stateTimer <= 0) {
+                      this.burst();
+                      this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
+                   }
                }
-           }
+          } else {
+               // No mate found.
+               if (this.isGuarding) {
+                   const hLocMating = this.getHoardLocation();
+                   if (hLocMating) {
+                        if (!this.moveTarget || this.hasReachedTarget()) {
+                            const angle = Math.random() * Math.PI * 2;
+                            const dist = Math.random() * (this.hoardRadius * 0.5); // Tight patrol
+                            this.moveTarget = new Phaser.Math.Vector2(
+                                hLocMating.x + Math.cos(angle) * dist,
+                                hLocMating.y + Math.sin(angle) * dist
+                            );
+                        }
 
-           if (enemy) {
-               this.moveTarget = new Phaser.Math.Vector2(enemy.x, enemy.y);
+                        const targetAngle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
+                        this.facingAngle = targetAngle;
+
+                        if (this.stateTimer <= 0) {
+                            this.burst();
+                            this.stateTimer = GameConfig.BEAN.CHARGE_DURATION * 2; // Move slower/less often
+                        }
+                   } else {
+                       this.setIdle();
+                   }
+               } else {
+                   // Normal roaming for non-guards
+                   if (!this.moveTarget || (this.moveTarget && this.hasReachedTarget())) {
+                       this.pickRandomTarget();
+                   }
+
+                   if (this.moveTarget) {
+                       const targetAngle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
+                       this.facingAngle = targetAngle;
+                   }
+
+                   // Burst movement
+                   if (this.stateTimer <= 0) {
+                      this.burst();
+                      this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
+                   }
+               }
+          }
+          break;
+
+        case MoveState.HAULING_FOOD:
+            const hLocHaul = this.getHoardLocation();
+            if (!hLocHaul) {
+                this.setIdle();
+                break;
+            }
+            // Move to hoard
+            this.moveTarget = new Phaser.Math.Vector2(hLocHaul.x, hLocHaul.y);
+            const distToHoard = Phaser.Math.Distance.Between(this.x, this.y, hLocHaul.x, hLocHaul.y);
+
+            if (distToHoard < 30) {
+                this.dropFood();
+            } else {
                const angle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
                this.facingAngle = angle;
-
                if (this.stateTimer <= 0) {
                    this.burst();
                    this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
                }
-           } else {
-               // Enemy lost or gone
-               this.setIdle();
-           }
-           break;
+            }
+            break;
 
-      case MoveState.FLEEING:
-           if (this.stateTimer <= 0) {
-               this.setIdle();
-           } else {
-               // Continue fleeing
-               if (this.moveTarget) {
-                    const angle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
-                    this.facingAngle = angle;
+        case MoveState.MOVING_TO_PARTNER:
+            // Check if partner is still valid
+            if (!this.lockedPartner || !this.lockedPartner.scene || this.lockedPartner.satiety <= 0 || !this.lockedPartner.isSeekingMate) {
+                // Partner died or lost interest
+                this.lockedPartner = null;
+                this.moveState = MoveState.SEEKING_MATE;
+                break;
+            }
 
-                    // Simple movement towards safety
-                    const body = this.body as Phaser.Physics.Arcade.Body;
-                    const fleeSpeed = 200 + (this.speed * 10);
-                    this.scene.physics.velocityFromRotation(angle, fleeSpeed, body.velocity);
-               }
-           }
-           break;
+            // Verify partner is still locked to us
+            if (this.lockedPartner.lockedPartner !== this) {
+                 this.lockedPartner = null;
+                 this.moveState = MoveState.SEEKING_MATE;
+                 break;
+            }
 
-      case MoveState.SEEKING_MATE:
-        // 0. Priority: Defend against intruders even while seeking mate
-        const matingIntruder = this.findIntruder();
-        if (matingIntruder) {
-             this.moveState = MoveState.CHASING_ENEMY;
-             this.moveTarget = new Phaser.Math.Vector2(matingIntruder.x, matingIntruder.y);
-             break;
-        }
+            // Move directly to partner
+            this.moveTarget = new Phaser.Math.Vector2(this.lockedPartner.x, this.lockedPartner.y);
+            const targetAngle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
+            this.facingAngle = targetAngle;
 
-        // Try to find a mate who is also seeking and not locked
-        const mate = this.findClosestMate();
+            if (this.stateTimer <= 0) {
+              this.burst();
+              this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
+            }
+            break;
 
-        if (mate) {
-             // Check if we should lock
-             // Distance threshold to commit? Let's say if within vision (Strategy 7 affects vision)
-             const vision = GameConfig.BEAN.VISION_RADIUS * this.strategy.searchRange;
-             const dist = Phaser.Math.Distance.Between(this.x, this.y, mate.x, mate.y);
-             if (dist < vision) {
-                 // Lock!
-                 this.lockPartner(mate);
-                 mate.lockPartner(this);
-             } else {
-                 // Just move towards them
-                 this.moveTarget = new Phaser.Math.Vector2(mate.x, mate.y);
-                 const targetAngle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
-                 this.facingAngle = targetAngle;
+        case MoveState.CHARGING:
+          if (this.moveTarget) {
+            const targetAngle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
 
-                 // Burst movement (only if we have a target)
-                 if (this.stateTimer <= 0) {
-                    this.burst();
-                    this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
-                 }
-             }
-        } else {
-             // No mate found.
-             if (this.isGuarding) {
-                 // If guarding, DO NOT roam map. Wait/Patrol near hoard.
-                 const hLocMating = this.getHoardLocation();
-                 if (hLocMating) {
-                     // Stay near hoard (Patrol logic)
-                      if (!this.moveTarget || this.hasReachedTarget()) {
-                          const angle = Math.random() * Math.PI * 2;
-                          const dist = Math.random() * (this.hoardRadius * 0.5); // Tight patrol
-                          this.moveTarget = new Phaser.Math.Vector2(
-                              hLocMating.x + Math.cos(angle) * dist,
-                              hLocMating.y + Math.sin(angle) * dist
-                          );
-                      }
+            // Calculate separation vector
+            const separationVector = this.getSeparationVector();
 
-                      const targetAngle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
-                      this.facingAngle = targetAngle;
+            if (separationVector.length() > 0) {
+              const targetVec = new Phaser.Math.Vector2(Math.cos(targetAngle), Math.sin(targetAngle));
+              const separationWeight = 2.5;
 
-                      if (this.stateTimer <= 0) {
-                          this.burst();
-                          this.stateTimer = GameConfig.BEAN.CHARGE_DURATION * 2; // Move slower/less often
-                      }
-                 } else {
-                     // Fallback if guard has no hoard (shouldn't happen often)
-                     this.setIdle();
-                 }
-             } else {
-                 // Normal roaming for non-guards
-                 if (!this.moveTarget || (this.moveTarget && this.hasReachedTarget())) {
-                     this.pickRandomTarget();
-                 }
-
-                 if (this.moveTarget) {
-                     const targetAngle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
-                     this.facingAngle = targetAngle;
-                 }
-
-                 // Burst movement
-                 if (this.stateTimer <= 0) {
-                    this.burst();
-                    this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
-                 }
-             }
-        }
-        break;
-
-      case MoveState.HAULING_FOOD:
-          const hLocHaul = this.getHoardLocation();
-          if (!hLocHaul) {
-              this.setIdle();
-              break;
-          }
-          // Move to hoard
-          this.moveTarget = new Phaser.Math.Vector2(hLocHaul.x, hLocHaul.y);
-          const distToHoard = Phaser.Math.Distance.Between(this.x, this.y, hLocHaul.x, hLocHaul.y);
-
-          if (distToHoard < 30) {
-              this.dropFood();
-          } else {
-             const angle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
-             this.facingAngle = angle;
-             if (this.stateTimer <= 0) {
-                 this.burst();
-                 this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
-             }
-          }
-          break;
-
-      case MoveState.MOVING_TO_PARTNER:
-          // Check if partner is still valid
-          if (!this.lockedPartner || !this.lockedPartner.scene || this.lockedPartner.satiety <= 0 || !this.lockedPartner.isSeekingMate) {
-              // Partner died or lost interest
-              this.lockedPartner = null;
-              this.moveState = MoveState.SEEKING_MATE;
-              break;
+              const combinedVec = targetVec.add(separationVector.scale(separationWeight));
+              this.facingAngle = combinedVec.angle();
+            } else {
+              this.facingAngle = targetAngle;
+            }
           }
 
-          // Verify partner is still locked to us (handle race conditions where they might have unlocked)
-          if (this.lockedPartner.lockedPartner !== this) {
-               // They cheated on us or reset
-               this.lockedPartner = null;
-               this.moveState = MoveState.SEEKING_MATE;
-               break;
-          }
-
-          // Move directly to partner
-          this.moveTarget = new Phaser.Math.Vector2(this.lockedPartner.x, this.lockedPartner.y);
-          const targetAngle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
-          this.facingAngle = targetAngle;
-
-          // Burst movement
           if (this.stateTimer <= 0) {
             this.burst();
-            this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
           }
           break;
 
-      case MoveState.CHARGING:
-        // Orient towards target while charging, with separation from other beans
-        if (this.moveTarget) {
-          const targetAngle = Phaser.Math.Angle.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y);
+        case MoveState.DECELERATING:
+          // If we are recovering from being stuck, wait for the timer
+          if (this.stateTimer > 0) break;
 
-          // Calculate separation vector
-          const separationVector = this.getSeparationVector();
+          // Check Speed to transition out of Decelerating
+          // Note: body.speed is a physics property, we check it here (simulating sensing)
+          const dist = this.moveTarget ? Phaser.Math.Distance.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y) : 0;
 
-          if (separationVector.length() > 0) {
-            // Combine target direction and separation direction
-            const targetVec = new Phaser.Math.Vector2(Math.cos(targetAngle), Math.sin(targetAngle));
-            const separationWeight = 2.5; // Strong repulsion to ensure they don't stick
+          if (this.moveTarget && dist > 100 && body.speed < 150) {
+              // Transition logic
+              if (this.lockedPartner) {
+                   this.moveState = MoveState.MOVING_TO_PARTNER;
+              } else if (this.isSeekingMate) {
+                   this.moveState = MoveState.SEEKING_MATE;
+              } else if (this.previousState === MoveState.HAULING_FOOD) {
+                   this.moveState = MoveState.HAULING_FOOD;
+                   this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
+              } else if (this.previousState === MoveState.CHASING_ENEMY) {
+                   this.moveState = MoveState.CHASING_ENEMY;
+                   this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
+              } else if (this.previousState === MoveState.GUARDING) {
+                   this.moveState = MoveState.GUARDING;
+                   this.stateTimer = 2000;
+              } else {
+                   this.moveState = MoveState.CHARGING;
+              }
+              this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
+          } else if (body.speed < 10) {
+             body.setVelocity(0,0);
 
-            const combinedVec = targetVec.add(separationVector.scale(separationWeight));
-            this.facingAngle = combinedVec.angle();
-          } else {
-            this.facingAngle = targetAngle;
-          }
-        }
-
-        if (this.stateTimer <= 0) {
-          this.burst();
-        }
-        break;
-
-      case MoveState.BURSTING:
-        // Transition immediately to Decelerating after frame 1 (velocity applied)
-        // Store current state as previous (wait, current is BURSTING, previous was CHARGING etc)
-        // We need to have stored 'previousState' BEFORE switching to bursting or charging.
-        // Actually, let's just store the intended state when we start charging/bursting.
-        this.moveState = MoveState.DECELERATING;
-        break;
-
-      case MoveState.DECELERATING:
-        // If we are recovering from being stuck, wait for the timer
-        if (this.stateTimer > 0) break;
-
-        const dist = this.moveTarget ? Phaser.Math.Distance.Between(this.x, this.y, this.moveTarget.x, this.moveTarget.y) : 0;
-
-        // If we are far from the target, start the next hop before stopping completely
-        if (this.moveTarget && dist > 100 && body.speed < 150) {
-            if (this.lockedPartner) {
+             if (this.lockedPartner) {
                  this.moveState = MoveState.MOVING_TO_PARTNER;
-            } else if (this.isSeekingMate) {
+                 this.stateTimer = 0;
+             } else if (this.isSeekingMate) {
                  this.moveState = MoveState.SEEKING_MATE;
-            } else if (this.previousState === MoveState.HAULING_FOOD) {
+                 this.stateTimer = 0;
+             } else if (this.previousState === MoveState.HAULING_FOOD) {
                  this.moveState = MoveState.HAULING_FOOD;
-                 this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
-            } else if (this.previousState === MoveState.CHASING_ENEMY) {
+                 // Check if arrived
+                 const hLocDecel = this.getHoardLocation();
+                 const d = hLocDecel ? Phaser.Math.Distance.Between(this.x, this.y, hLocDecel.x, hLocDecel.y) : 999;
+                 if (d < 30) this.dropFood();
+                 else this.stateTimer = 0;
+             } else if (this.previousState === MoveState.CHASING_ENEMY) {
                  this.moveState = MoveState.CHASING_ENEMY;
-                 this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
-            } else if (this.previousState === MoveState.GUARDING) {
-                 this.moveState = MoveState.GUARDING;
-                 this.stateTimer = 2000;
-            } else {
-                 this.moveState = MoveState.CHARGING;
-            }
-            this.stateTimer = GameConfig.BEAN.CHARGE_DURATION;
-        } else if (body.speed < 10) {
-           body.setVelocity(0,0);
+                 this.stateTimer = 0;
+             } else if (this.previousState === MoveState.GUARDING) {
+                  this.moveState = MoveState.GUARDING;
+                  this.stateTimer = 2000;
+             } else {
+                 this.setIdle();
+             }
+          }
+          break;
+      }
 
-           if (this.lockedPartner) {
-               this.moveState = MoveState.MOVING_TO_PARTNER;
-               this.stateTimer = 0;
-           } else if (this.isSeekingMate) {
-               this.moveState = MoveState.SEEKING_MATE;
-               this.stateTimer = 0;
-           } else if (this.previousState === MoveState.HAULING_FOOD) {
-               this.moveState = MoveState.HAULING_FOOD;
-               // Check if arrived
-               const hLocDecel = this.getHoardLocation();
-               const d = hLocDecel ? Phaser.Math.Distance.Between(this.x, this.y, hLocDecel.x, hLocDecel.y) : 999;
-               if (d < 30) this.dropFood();
-               else this.stateTimer = 0;
-           } else if (this.previousState === MoveState.CHASING_ENEMY) {
-               this.moveState = MoveState.CHASING_ENEMY;
-               this.stateTimer = 0;
-           } else if (this.previousState === MoveState.GUARDING) {
-                this.moveState = MoveState.GUARDING;
-                this.stateTimer = 2000;
-           } else {
-               this.setIdle();
-           }
-        }
-        break;
-    }
+      // Stuck Detection (Sensing)
+      const isMovingState = this.moveState === MoveState.CHARGING || this.moveState === MoveState.MOVING_TO_PARTNER;
+      if (isMovingState && !body.touching.none && body.speed < 20) {
+          this.stuckTimer += delta;
+          if (this.stuckTimer > 500) {
+              this.handleStuck();
+              this.stuckTimer = 0;
+          }
+      } else {
+          this.stuckTimer = 0;
+      }
+  }
 
-    // 1.5 Stuck Detection
-    const isMovingState = this.moveState === MoveState.CHARGING || this.moveState === MoveState.MOVING_TO_PARTNER;
-    if (isMovingState && !body.touching.none && body.speed < 20) {
-        this.stuckTimer += delta;
-        if (this.stuckTimer > 500) {
-            this.handleStuck();
-            this.stuckTimer = 0;
+  update(_time: number, delta: number, render: boolean = true) {
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    if (!body) return; // Safety check in case update is called before physics setup
+
+    // PHYSICS UPDATE LOOP
+    // This runs in sub-steps
+
+    // Handle Physics-based state effects (Continuous Forces)
+    if (this.moveState === MoveState.FLEEING) {
+        if (this.moveTarget) {
+            const fleeSpeed = 200 + (this.speed * 10);
+            this.scene.physics.velocityFromRotation(this.facingAngle, fleeSpeed, body.velocity);
         }
-    } else {
-        this.stuckTimer = 0;
+    } else if (this.moveState === MoveState.BURSTING) {
+         // Immediate transition to Decelerating after one physics frame
+         this.moveState = MoveState.DECELERATING;
     }
 
     // 2. Tail Physics (Elastic Rope System)

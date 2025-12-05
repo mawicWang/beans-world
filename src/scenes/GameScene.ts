@@ -220,6 +220,15 @@ export default class GameScene extends Phaser.Scene {
     // Total time we want to advance this frame
     const totalSimTime = delta * this.currentSpeed;
 
+    // AI / BRAIN UPDATE (Run Once Per Visual Frame)
+    // We do this before the physics loop so decisions are made with the current state.
+    // We pass 'totalSimTime' so the AI knows how much time passes in this frame (e.g. for age/satiety decay).
+    for (const bean of this.beans) {
+        if (bean.scene) {
+            bean.think(this.simTime, totalSimTime);
+        }
+    }
+
     // The automatic step covers 'delta' amount of time (1x speed).
     // We need to cover the rest: (currentSpeed - 1) * delta.
     let pendingTime = totalSimTime - delta;
